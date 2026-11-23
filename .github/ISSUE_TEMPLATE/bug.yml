@@ -1,0 +1,17 @@
+name: Bug report
+description: Reproduction-to-resolution tracking with evidence
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Reproduction command, input snapshot, expected and actual output
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Root cause, patch, regression test, review link and closing evidence
+    validations:
+      required: true

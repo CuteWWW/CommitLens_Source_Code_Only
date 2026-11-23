@@ -1,0 +1,25 @@
+name: User story
+description: Traceable CS5351 functionality with measurable acceptance criteria
+title: "[Story] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: User story
+      description: "As a <developer>, when <trigger>, I want <outcome>."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and test cases
+      description: Include inputs, steps, expected outputs, measurable thresholds.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Owner, sprint, dependency, and risk
+    validations:
+      required: true

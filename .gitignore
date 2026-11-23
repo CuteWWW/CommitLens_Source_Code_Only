@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Local CommitLens analysis artifacts
+.git-publish/
+.commitlens-cache/
+demo.log
+demo.html
+report.html
+week1-report.html
+week1-report.json
+artifacts/
+
+# Local secrets and OS metadata
+.env
+.env.*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,31 @@
+name: Tests, regression and artifact checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile all modules
+        run: python -m compileall -q commitlens tests scripts
+      - name: Unit and real-Git integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Trace coverage and machine-readable artifact
+        run: python scripts/coverage_report.py
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: artifacts/coverage.json
+          if-no-files-found: warn

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Git 提交历史健康度报告</title>
+<style>
+:root{--ok:#16a34a;--info:#2563eb;--warn:#d97706;--alert:#dc2626;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0}
+*{box-sizing:border-box}
+body{margin:0;background:#f6f7f9;color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;
+  line-height:1.65;font-size:15px}
+.wrap{max-width:1000px;margin:0 auto;padding:40px 24px 80px}
+header{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:24px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+h1{font-size:30px;margin:6px 0 4px;letter-spacing:-.01em}
+.repo{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);font-size:13px;word-break:break-all}
+.chips{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:#eef2ff;color:#3730a3;border-radius:999px;padding:3px 11px;font-size:12px;white-space:nowrap}
+.verdict{display:flex;gap:32px;align-items:flex-start;background:#fff;border:1px solid var(--line);
+  border-radius:12px;padding:26px;margin:26px 0}
+.scorebox{text-align:center;min-width:130px;border-right:1px solid var(--line);padding-right:28px}
+.scorebox .num{font-size:56px;font-weight:700;line-height:1}
+.scorebox .grade{color:var(--muted);font-size:13px;margin-top:6px}
+.headlines{flex:1;margin:0;padding-left:18px}
+.headlines li{margin:6px 0}
+.headlines .t{font-weight:600}
+h2{font-size:19px;margin:38px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-left:4px solid var(--muted);
+  border-radius:8px;padding:14px 16px}
+.card .ct{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.card .cs{color:var(--muted);font-size:13px;margin-top:6px}
+.badge{font-size:11px;padding:1px 8px;border-radius:999px;color:#fff;white-space:nowrap;align-self:flex-start}
+section.check{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin:18px 0}
+section.check h2{margin-top:0;display:flex;align-items:center;gap:10px;border:none;padding:0}
+.summary{font-size:15px;color:#1e293b;margin:4px 0 16px}
+.chart-wrap{overflow-x:auto}
+svg.chart{max-width:100%;height:auto}
+svg .x{font-size:11px;fill:#64748b}
+svg .y{font-size:11px;fill:#94a3b8}
+svg .v{font-size:11px;fill:#334155}
+svg .unit{font-size:11px;fill:#94a3b8}
+table.data{width:100%;border-collapse:collapse;font-size:13.5px}
+table.data th,table.data td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+table.data th{color:var(--muted);font-weight:600;font-size:12px}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;background:#f1f5f9;
+  padding:1px 5px;border-radius:4px;word-break:break-all}
+.finding{border-top:1px dashed var(--line);padding-top:14px;margin-top:14px}
+.finding h3{margin:0 0 6px;font-size:15.5px}
+.finding p{margin:6px 0}
+.advice{color:#065f46;background:#ecfdf5;border-left:3px solid #10b981;padding:8px 12px;border-radius:4px;font-size:14px}
+details.ev{margin-top:10px}
+details.ev summary{cursor:pointer;color:var(--info);font-size:13.5px;user-select:none}
+.ev-body{margin:10px 0 0;padding:0;list-style:none}
+.ev-body>li{border-left:2px solid var(--line);padding:6px 0 6px 12px;margin:8px 0}
+.ev-body .el{font-weight:600;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.ev-body .ed{color:var(--muted);font-size:13px;margin-left:6px}
+.ev-body ul{margin:6px 0 0;padding-left:18px;color:#475569;font-size:12.5px}
+.ev-body ul li{font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+.none{color:var(--ok);font-size:14px}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow-x:auto;font-size:12.5px;line-height:1.5}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin:18px 0 0}
+nav.toc a{color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1}
+@media print{body{background:#fff}nav.toc{display:none}section.check{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">CommitLens · 提交历史体检</div>
+  <h1>Git 提交历史健康度报告</h1>
+  <div class="repo">D:\repos\flask</div>
+  <div class="chips"><span class="chip">提交 21</span><span class="chip">贡献者 3</span><span class="chip">时间范围 2026-05-31 → 2026-10-30</span><span class="chip">窗口 180 天</span><span class="chip">生成于 2026-11-17 15:46</span><span class="chip">配置指纹 97f7502a</span><span class="chip">v0.1.0</span></div>
+</header>
+<nav class="toc"><a href="#check-message">1. 提交信息规范</a><a href="#check-size">2. 单次改动规模</a><a href="#check-giant">3. 巨型提交</a><a href="#check-cadence_freq">4. 提交频率异常</a><a href="#check-cadence_dormant">5. 长期未提交</a><a href="#check-hotspot">6. 热点文件</a><a href="#check-ownership">7. 知识集中度</a><a href="#check-trend">8. 活跃度趋势</a></nav>
+<section class="verdict">
+  <div class="scorebox">
+    <div class="num" style="color:#dc2626">88</div>
+    <div class="grade">综合评分 · 等级 B</div>
+  </div>
+  <ul class="headlines"><li><span class="t" style="color:#dc2626">问题</span> · 知识集中度</li><li><span class="t" style="color:#d97706">关注</span> · 提交信息规范</li></ul>
+</section>
+<h2 id="scorecard">八项体检结果</h2>
+<div class="cards"><div class="card" style="border-left-color:#d97706"><div class="ct"><span>1. 提交信息规范</span><span class="badge" style="background:#d97706">关注</span></div><div class="cs">38% 的提交不符合规范（8/21），最常见问题：内容空泛，看不出改了什么</div></div><div class="card" style="border-left-color:#16a34a"><div class="ct"><span>2. 单次改动规模</span><span class="badge" style="background:#16a34a">正常</span></div><div class="cs">提交改动中位数 2 个文件、16 行；P90 为 8 个文件，0 个提交改了超过 30 个文件</div></div><div class="card" style="border-left-color:#16a34a"><div class="ct"><span>3. 巨型提交</span><span class="badge" style="background:#16a34a">正常</span></div><div class="cs">0 个巨型提交（≥ 30 文件或 ≥ 800 行），占 0% 的提交数、却吃掉 0% 的代码改动量</div></div><div class="card" style="border-left-color:#2563eb"><div class="ct"><span>4. 提交频率异常</span><span class="badge" style="background:#2563eb">提示</span></div><div class="cs">团队平均 0.1 次/周；1 人高于其他人中位数 3 倍</div></div><div class="card" style="border-left-color:#16a34a"><div class="ct"><span>5. 长期未提交</span><span class="badge" style="background:#16a34a">正常</span></div><div class="cs">没有成员超过 21 天未提交</div></div><div class="card" style="border-left-color:#2563eb"><div class="ct"><span>6. 热点文件</span><span class="badge" style="background:#2563eb">提示</span></div><div class="cs">共 36 个文件被改动；最热的 5 个文件承担了 35% 的改动，其中 `src/flask/app.py` 被改 6 次（2 人参与）</div></div><div class="card" style="border-left-color:#dc2626"><div class="ct"><span>7. 知识集中度</span><span class="badge" style="background:#dc2626">问题</span></div><div class="cs">在 2 个被改动 ≥5 次的文件中，2 个（100%）有 80% 以上的改动来自同一人；全仓巴士因子 = 1 人（1 人离开将带走 80% 的改动知识）</div></div><div class="card" style="border-left-color:#16a34a"><div class="ct"><span>8. 活跃度趋势</span><span class="badge" style="background:#16a34a">正常</span></div><div class="cs">最近 4 周平均每周 1.8 次提交，此前 4 周为 0.2 次，上升 600%（趋势尚未达到统计显著，可能是正常波动）</div></div></div>
+<h2 id="deductions">扣分明细</h2>
+<table class="data"><thead><tr><th>检查项</th><th>等级</th><th>扣分</th></tr></thead>
+<tbody><tr><td>知识集中度</td><td><span class="badge" style="background:#dc2626">问题</span></td><td>-8</td></tr><tr><td>提交信息规范</td><td><span class="badge" style="background:#d97706">关注</span></td><td>-4</td></tr><tr><td><b>合计</b></td><td></td><td><b>-12</b></td></tr></tbody></table>
+<p class="summary" style="font-size:13px;color:#64748b">
+评分规则：100 分起，每个「问题」项扣 8 分、「关注」项扣 4 分、「提示」不扣分。
+每一笔扣分都对应上面某条结论，不存在无法解释的分数。</p>
+<section class="check" id="check-message">
+  <h2>1. 提交信息规范
+    <span class="badge" style="background:#d97706">关注</span></h2>
+  <p class="summary">38% 的提交不符合规范（8/21），最常见问题：内容空泛，看不出改了什么</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="182.0" x2="706" y2="182.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="186.0" text-anchor="end" class="y">0</text><line x1="52" y1="150.0" x2="706" y2="150.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="154.0" text-anchor="end" class="y">2</text><line x1="52" y1="118.0" x2="706" y2="118.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="122.0" text-anchor="end" class="y">4</text><line x1="52" y1="86.0" x2="706" y2="86.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="90.0" text-anchor="end" class="y">6</text><line x1="52" y1="54.0" x2="706" y2="54.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="58.0" text-anchor="end" class="y">8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">10</text><rect x="100.8" y="54.0" width="66.0" height="128.0" rx="3" fill="#3b82f6"><title>内容空泛，看不出改了什么: 8 次</title></rect><text x="133.8" y="49.0" text-anchor="middle" class="v">8</text><text x="133.8" y="198.0" text-anchor="end" class="x" transform="rotate(-28 133.8 198.0)">内容空泛，看不出改了什么</text><rect x="264.2" y="166.0" width="66.0" height="16.0" rx="3" fill="#3b82f6"><title>改动 418 行却没有正文说明: 1 次</title></rect><text x="297.2" y="198.0" text-anchor="end" class="x" transform="rotate(-28 297.2 198.0)">改动 418 行却没有正文…</text><rect x="427.8" y="166.0" width="66.0" height="16.0" rx="3" fill="#3b82f6"><title>改动 439 行却没有正文说明: 1 次</title></rect><text x="460.8" y="198.0" text-anchor="end" class="x" transform="rotate(-28 460.8 198.0)">改动 439 行却没有正文…</text><rect x="591.2" y="166.0" width="66.0" height="16.0" rx="3" fill="#3b82f6"><title>标题过短: 1 次</title></rect><text x="624.2" y="198.0" text-anchor="end" class="x" transform="rotate(-28 624.2 198.0)">标题过短</text><text x="52" y="12" class="unit">次</text></svg></div>
+  <article class="finding"><h3><span style="color:#d97706">●</span> 8 个提交的信息无法说明改了什么</h3><p>提交信息是评审者理解改动的第一入口。标题空泛、长度失控或缺少背景说明，会迫使人去读 diff 才能判断这个提交在干什么。</p><p class="advice"><b>建议：</b>约定标题格式（建议 `&lt;type&gt;: &lt;做了什么&gt;`，不超过 72 字符）；改动超过 200 行时在正文写清「为什么改」；团队统一后可用 require_type_prefix 在提交前拦截。</p><details class="ev"><summary>查看证据（5 条）</summary><ul class="ev-body"><li><span class="el">commit ff6fa22</span><span class="ed">「update dependencies」改动 11 个文件 / 439 行 · <code>ff6fa22f4d96</code></span><ul><li>- 内容空泛，看不出改了什么</li><li>- 改动 439 行却没有正文说明</li></ul></li><li><span class="el">commit 8285adf</span><span class="ed">「update dev dependencies」改动 8 个文件 / 418 行 · <code>8285adf5a4f5</code></span><ul><li>- 内容空泛，看不出改了什么</li><li>- 改动 418 行却没有正文说明</li></ul></li><li><span class="el">commit 329c32b</span><span class="ed">「fix dev」改动 2 个文件 / 69 行 · <code>329c32b91693</code></span><ul><li>- 标题过短（7 &lt; 8 字符）</li><li>- 内容空泛，看不出改了什么</li></ul></li><li><span class="el">commit 81798b4</span><span class="ed">「fix typos」改动 5 个文件 / 16 行 · <code>81798b406f97</code></span><ul><li>- 内容空泛，看不出改了什么</li></ul></li><li><span class="el">commit 41cb747</span><span class="ed">「fix link」改动 1 个文件 / 6 行 · <code>41cb747cd5a9</code></span><ul><li>- 内容空泛，看不出改了什么</li></ul></li></ul></details></article>
+</section><section class="check" id="check-size">
+  <h2>2. 单次改动规模
+    <span class="badge" style="background:#16a34a">正常</span></h2>
+  <p class="summary">提交改动中位数 2 个文件、16 行；P90 为 8 个文件，0 个提交改了超过 30 个文件</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="182.0" x2="706" y2="182.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="186.0" text-anchor="end" class="y">0</text><line x1="52" y1="150.0" x2="706" y2="150.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="154.0" text-anchor="end" class="y">2</text><line x1="52" y1="118.0" x2="706" y2="118.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="122.0" text-anchor="end" class="y">4</text><line x1="52" y1="86.0" x2="706" y2="86.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="90.0" text-anchor="end" class="y">6</text><line x1="52" y1="54.0" x2="706" y2="54.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="58.0" text-anchor="end" class="y">8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">10</text><rect x="73.5" y="38.0" width="66.0" height="144.0" rx="3" fill="#3b82f6"><title>1 个文件: 9 个提交</title></rect><text x="106.5" y="33.0" text-anchor="middle" class="v">9</text><text x="106.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 106.5 198.0)">1 个文件</text><rect x="182.5" y="54.0" width="66.0" height="128.0" rx="3" fill="#3b82f6"><title>2-3 个: 8 个提交</title></rect><text x="215.5" y="49.0" text-anchor="middle" class="v">8</text><text x="215.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 215.5 198.0)">2-3 个</text><rect x="291.5" y="150.0" width="66.0" height="32.0" rx="3" fill="#3b82f6"><title>4-9 个: 2 个提交</title></rect><text x="324.5" y="145.0" text-anchor="middle" class="v">2</text><text x="324.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 324.5 198.0)">4-9 个</text><rect x="400.5" y="150.0" width="66.0" height="32.0" rx="3" fill="#3b82f6"><title>10-29 个: 2 个提交</title></rect><text x="433.5" y="145.0" text-anchor="middle" class="v">2</text><text x="433.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 433.5 198.0)">10-29 个</text><rect x="509.5" y="182.0" width="66.0" height="0.0" rx="3" fill="#3b82f6"><title>30-99 个: 0 个提交</title></rect><text x="542.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 542.5 198.0)">30-99 个</text><rect x="618.5" y="182.0" width="66.0" height="0.0" rx="3" fill="#3b82f6"><title>100+ 个: 0 个提交</title></rect><text x="651.5" y="198.0" text-anchor="end" class="x" transform="rotate(-28 651.5 198.0)">100+ 个</text><text x="52" y="12" class="unit">个提交</text></svg></div>
+  <p class="none">该检查项未发现需要处理的问题。</p>
+</section><section class="check" id="check-giant">
+  <h2>3. 巨型提交
+    <span class="badge" style="background:#16a34a">正常</span></h2>
+  <p class="summary">0 个巨型提交（≥ 30 文件或 ≥ 800 行），占 0% 的提交数、却吃掉 0% 的代码改动量</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="182.0" x2="706" y2="182.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="186.0" text-anchor="end" class="y">0</text><line x1="52" y1="150.0" x2="706" y2="150.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="154.0" text-anchor="end" class="y">0.2</text><line x1="52" y1="118.0" x2="706" y2="118.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="122.0" text-anchor="end" class="y">0.4</text><line x1="52" y1="86.0" x2="706" y2="86.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="90.0" text-anchor="end" class="y">0.6</text><line x1="52" y1="54.0" x2="706" y2="54.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="58.0" text-anchor="end" class="y">0.8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">1</text><rect x="346.0" y="182.0" width="66.0" height="0.0" rx="3" fill="#3b82f6"><title>无: 0 行改动</title></rect><text x="379.0" y="198.0" text-anchor="middle" class="x">无</text><text x="52" y="12" class="unit">行改动</text></svg></div>
+  <p class="none">该检查项未发现需要处理的问题。</p>
+</section><section class="check" id="check-cadence_freq">
+  <h2>4. 提交频率异常
+    <span class="badge" style="background:#2563eb">提示</span></h2>
+  <p class="summary">团队平均 0.1 次/周；1 人高于其他人中位数 3 倍</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="182.0" x2="706" y2="182.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="186.0" text-anchor="end" class="y">0</text><line x1="52" y1="150.0" x2="706" y2="150.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="154.0" text-anchor="end" class="y">0.2</text><line x1="52" y1="118.0" x2="706" y2="118.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="122.0" text-anchor="end" class="y">0.4</text><line x1="52" y1="86.0" x2="706" y2="86.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="90.0" text-anchor="end" class="y">0.6</text><line x1="52" y1="54.0" x2="706" y2="54.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="58.0" text-anchor="end" class="y">0.8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">1</text><rect x="128.0" y="50.8" width="66.0" height="131.2" rx="3" fill="#3b82f6"><title>David Lord: 0.8 次/周</title></rect><text x="161.0" y="45.8" text-anchor="middle" class="v">0.8</text><text x="161.0" y="198.0" text-anchor="end" class="x" transform="rotate(-28 161.0 198.0)">David Lord</text><rect x="346.0" y="174.0" width="66.0" height="8.0" rx="3" fill="#3b82f6"><title>Michał Górny: 0.1 次/周</title></rect><text x="379.0" y="198.0" text-anchor="end" class="x" transform="rotate(-28 379.0 198.0)">Michał Górny</text><rect x="564.0" y="167.6" width="66.0" height="14.4" rx="3" fill="#3b82f6"><title>lkk7: 0.1 次/周</title></rect><text x="597.0" y="198.0" text-anchor="end" class="x" transform="rotate(-28 597.0 198.0)">lkk7</text><text x="52" y="12" class="unit">次/周</text></svg></div>
+  <article class="finding"><h3><span style="color:#2563eb">●</span> 1 人的提交频率显著高于团队中位数</h3><p>提交频率高不必然是坏事：可能承担了更多任务，也可能是提交粒度过细（每改一行就提交一次），后者会让历史难以阅读。这个指标只用于观察，不应作为个人绩效依据。</p><p class="advice"><b>建议：</b>如果是粒度过细，约定「一次提交对应一个可独立理解的改动」；如果是任务分配不均，检查一下 backlog 的分配。</p><details class="ev"><summary>查看证据（1 条）</summary><ul class="ev-body"><li><span class="el">David Lord</span><span class="ed">18 次提交 / 21.9 周 ≈ 0.8 次每周（其他人中位数 0.1） · <code>bfc8f983871d</code></span></li></ul></details></article>
+</section><section class="check" id="check-cadence_dormant">
+  <h2>5. 长期未提交
+    <span class="badge" style="background:#16a34a">正常</span></h2>
+  <p class="summary">没有成员超过 21 天未提交</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="182.0" x2="706" y2="182.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="186.0" text-anchor="end" class="y">0</text><line x1="52" y1="150.0" x2="706" y2="150.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="154.0" text-anchor="end" class="y">0.2</text><line x1="52" y1="118.0" x2="706" y2="118.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="122.0" text-anchor="end" class="y">0.4</text><line x1="52" y1="86.0" x2="706" y2="86.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="90.0" text-anchor="end" class="y">0.6</text><line x1="52" y1="54.0" x2="706" y2="54.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="58.0" text-anchor="end" class="y">0.8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">1</text><rect x="346.0" y="182.0" width="66.0" height="0.0" rx="3" fill="#3b82f6"><title>无: 0 天未提交</title></rect><text x="379.0" y="198.0" text-anchor="middle" class="x">无</text><text x="52" y="12" class="unit">天未提交</text></svg></div>
+  <p class="none">该检查项未发现需要处理的问题。</p>
+</section><section class="check" id="check-hotspot">
+  <h2>6. 热点文件
+    <span class="badge" style="background:#2563eb">提示</span></h2>
+  <p class="summary">共 36 个文件被改动；最热的 5 个文件承担了 35% 的改动，其中 `src/flask/app.py` 被改 6 次（2 人参与）</p>
+  <div class="chart-wrap"><table class="data"><thead><tr><th>文件</th><th>改动次数</th><th>改动行数</th><th>参与人数</th></tr></thead><tbody><tr><td><code>src/flask/app.py</code></td><td>6</td><td>179</td><td>2</td></tr><tr><td><code>CHANGES.rst</code></td><td>5</td><td>14</td><td>1</td></tr><tr><td><code>.github/workflows/tests.yaml</code></td><td>4</td><td>261</td><td>1</td></tr><tr><td><code>tests/test_basic.py</code></td><td>4</td><td>20</td><td>2</td></tr><tr><td><code>src/flask/cli.py</code></td><td>3</td><td>9</td><td>1</td></tr></tbody></table></div>
+  <article class="finding"><h3><span style="color:#2563eb">●</span> 5 个文件承担了 35% 的改动</h3><p>改动集中在少数文件上是正常现象（核心模块本来就会被反复修改），但它意味着两件事：这些文件的评审质量决定了整个项目的质量；以及它们是最容易产生冲突和回归的地方。</p><p class="advice"><b>建议：</b>给热点文件配更强的测试与更明确的 owner；如果某文件每次改动都要大范围返工，考虑先做一次结构性重构。</p><details class="ev"><summary>查看证据（5 条）</summary><ul class="ev-body"><li><span class="el">src/flask/app.py</span><span class="ed">被改 6 次 / 179 行 / 2 人参与</span><ul><li>- 参与人：David Lord、lkk7</li></ul></li><li><span class="el">CHANGES.rst</span><span class="ed">被改 5 次 / 14 行 / 1 人参与</span><ul><li>- 参与人：David Lord</li></ul></li><li><span class="el">.github/workflows/tests.yaml</span><span class="ed">被改 4 次 / 261 行 / 1 人参与</span><ul><li>- 参与人：David Lord</li></ul></li><li><span class="el">tests/test_basic.py</span><span class="ed">被改 4 次 / 20 行 / 2 人参与</span><ul><li>- 参与人：David Lord、lkk7</li></ul></li><li><span class="el">src/flask/cli.py</span><span class="ed">被改 3 次 / 9 行 / 1 人参与</span><ul><li>- 参与人：David Lord</li></ul></li></ul></details></article>
+</section><section class="check" id="check-ownership">
+  <h2>7. 知识集中度
+    <span class="badge" style="background:#dc2626">问题</span></h2>
+  <p class="summary">在 2 个被改动 ≥5 次的文件中，2 个（100%）有 80% 以上的改动来自同一人；全仓巴士因子 = 1 人（1 人离开将带走 80% 的改动知识）</p>
+  <div class="chart-wrap"><table class="data"><thead><tr><th>文件</th><th>主导者</th><th>占比</th><th>改动次数</th><th>参与人数</th></tr></thead><tbody><tr><td><code>src/flask/app.py</code></td><td>David Lord</td><td>83%</td><td>6</td><td>2</td></tr><tr><td><code>CHANGES.rst</code></td><td>David Lord</td><td>100%</td><td>5</td><td>1</td></tr></tbody></table></div>
+  <article class="finding"><h3><span style="color:#dc2626">●</span> 2 个文件的知识集中在一个人身上（巴士因子 1）</h3><p>知识过度集中不是代码问题，是人身上的风险：被集中负责的文件一旦遇到请假、转组或交接，接手成本会非常高，而且缺少第二双眼睛看代码。</p><p class="advice"><b>建议：</b>对单人垄断的热点文件做一次结对评审或轮换 owner；补上该模块的文档与测试，让第二个人能在半天内接手。</p><details class="ev"><summary>查看证据（2 条）</summary><ul class="ev-body"><li><span class="el">src/flask/app.py</span><span class="ed">83% 的改动来自 David Lord（5 次 / 共 6 次，2 人参与）</span><ul><li>- David Lord: 5 次</li><li>- lkk7: 1 次</li></ul></li><li><span class="el">CHANGES.rst</span><span class="ed">100% 的改动来自 David Lord（5 次 / 共 5 次，1 人参与）</span><ul><li>- David Lord: 5 次</li></ul></li></ul></details></article>
+</section><section class="check" id="check-trend">
+  <h2>8. 活跃度趋势
+    <span class="badge" style="background:#16a34a">正常</span></h2>
+  <p class="summary">最近 4 周平均每周 1.8 次提交，此前 4 周为 0.2 次，上升 600%（趋势尚未达到统计显著，可能是正常波动）</p>
+  <div class="chart-wrap"><svg class="chart" viewBox="0 0 720 240" width="100%" role="img"><line x1="52" y1="194.0" x2="706" y2="194.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="198.0" text-anchor="end" class="y">0</text><line x1="52" y1="159.6" x2="706" y2="159.6" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="163.6" text-anchor="end" class="y">2</text><line x1="52" y1="125.2" x2="706" y2="125.2" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="129.2" text-anchor="end" class="y">4</text><line x1="52" y1="90.8" x2="706" y2="90.8" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="94.8" text-anchor="end" class="y">6</text><line x1="52" y1="56.4" x2="706" y2="56.4" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="60.4" text-anchor="end" class="y">8</text><line x1="52" y1="22.0" x2="706" y2="22.0" stroke="#e5e7eb" stroke-width="1"/><text x="46" y="26.0" text-anchor="end" class="y">10</text><polygon points="52.0,194.0 52.0,176.8 81.7,194.0 111.5,176.8 141.2,194.0 170.9,194.0 200.6,194.0 230.4,194.0 260.1,142.4 289.8,194.0 319.5,159.6 349.3,194.0 379.0,90.8 408.7,194.0 438.5,194.0 468.2,194.0 497.9,176.8 527.6,194.0 557.4,194.0 587.1,194.0 616.8,125.2 646.5,194.0 676.3,194.0 706.0,142.4 706.0,194.0" fill="#3b82f6" opacity="0.10"/><polyline points="52.0,176.8 81.7,194.0 111.5,176.8 141.2,194.0 170.9,194.0 200.6,194.0 230.4,194.0 260.1,142.4 289.8,194.0 319.5,159.6 349.3,194.0 379.0,90.8 408.7,194.0 438.5,194.0 468.2,194.0 497.9,176.8 527.6,194.0 557.4,194.0 587.1,194.0 616.8,125.2 646.5,194.0 676.3,194.0 706.0,142.4" fill="none" stroke="#3b82f6" stroke-width="2"/><circle cx="52.0" cy="176.8" r="3" fill="#1d4ed8"/><circle cx="81.7" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="111.5" cy="176.8" r="3" fill="#1d4ed8"/><circle cx="141.2" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="170.9" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="200.6" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="230.4" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="260.1" cy="142.4" r="3" fill="#1d4ed8"/><circle cx="289.8" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="319.5" cy="159.6" r="3" fill="#1d4ed8"/><circle cx="349.3" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="379.0" cy="90.8" r="3" fill="#1d4ed8"/><circle cx="408.7" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="438.5" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="468.2" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="497.9" cy="176.8" r="3" fill="#1d4ed8"/><circle cx="527.6" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="557.4" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="587.1" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="616.8" cy="125.2" r="3" fill="#1d4ed8"/><circle cx="646.5" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="676.3" cy="194.0" r="3" fill="#1d4ed8"/><circle cx="706.0" cy="142.4" r="3" fill="#1d4ed8"/><text x="52.0" y="212.0" text-anchor="middle" class="x">05-25</text><text x="141.2" y="212.0" text-anchor="middle" class="x">06-15</text><text x="230.4" y="212.0" text-anchor="middle" class="x">07-06</text><text x="319.5" y="212.0" text-anchor="middle" class="x">07-27</text><text x="408.7" y="212.0" text-anchor="middle" class="x">08-17</text><text x="497.9" y="212.0" text-anchor="middle" class="x">09-07</text><text x="587.1" y="212.0" text-anchor="middle" class="x">09-28</text><text x="676.3" y="212.0" text-anchor="middle" class="x">10-19</text><text x="706.0" y="212.0" text-anchor="middle" class="x">10-26</text><text x="52" y="12" class="unit">次/周</text></svg></div>
+  <p class="none">该检查项未发现需要处理的问题。</p>
+</section>
+<footer>
+  <p><b>复现方式</b></p>
+  <pre>python -m commitlens scan D:\repos\flask --since 180 --out flask.html</pre>
+  <p>数据来源：D:\repos\flask</p>
+  <details><summary style="cursor:pointer">查看采集命令</summary><pre>git -C D:\repos\flask -c core.quotepath=false log --no-merges --numstat --date=iso-strict --pretty=format:%x01%H%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x02 --since=180 days ago</pre></details>
+  <details><summary style="cursor:pointer">查看本次使用的配置</summary><pre># CommitLens 配置。所有阈值都可以改，改完重新 scan 即可。
+# 这份文件本身会进报告页脚（哈希），保证结果可复现。
+
+[general]
+window_days = 180
+ignore_paths = [&quot;node_modules/&quot;, &quot;vendor/&quot;, &quot;dist/&quot;, &quot;build/&quot;, &quot;*.lock&quot;, &quot;*.min.js&quot;]
+ignore_authors = [&quot;dependabot[bot]&quot;, &quot;renovate[bot]&quot;]
+
+[message]
+max_subject_length = 72
+min_subject_length = 8
+require_type_prefix = false
+require_issue_ref = false
+require_body_churn = 200
+
+[size]
+max_files = 30
+max_lines = 800
+giant_percentile = 95
+
+[cadence]
+freq_multiplier = 3.0
+dormant_days = 21
+
+[hotspot]
+top_n = 10
+
+[ownership]
+single_owner_share = 0.8
+min_changes = 5
+bus_factor_coverage = 0.8
+
+[trend]
+recent_weeks = 4
+alpha = 0.05
+drop_pct = 0.25
+
+[report]
+title = &quot;Git 提交历史健康度报告&quot;
+team = &quot;&quot;
+</pre></details>
+  <p>由 CommitLens v0.1.0 生成于 2026-11-17 15:46 ·
+     配置指纹 97f7502a</p>
+</footer>
+</div>
+</body>
+</html>
