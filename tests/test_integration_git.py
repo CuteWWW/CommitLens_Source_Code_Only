@@ -76,7 +76,7 @@ class TestLocalGitIntegration(GitFixture):
         report, payload, _ = self.scan()
         self.assertEqual(payload["summary"]["commits"], 0)
         self.assertIsNone(payload["summary"]["score"])
-        self.assertIn("样本不足，暂不评分", report)
+        self.assertIn("Sample size is below the confidence threshold; no score is assigned", report)
 
     def test_20_rename_and_binary_file(self):
         self.commit("feat: initialize module", "src/old.py")
@@ -153,7 +153,7 @@ class TestLocalGitIntegration(GitFixture):
         _, payload, _ = self.scan("--incremental", "--cache-dir", str(cached_dir))
         self.assertEqual(payload["summary"]["commits"], 2)
         _, _, proc = self.scan("--incremental", "--cache-dir", str(cached_dir))
-        self.assertIn("缓存报告命中", proc.stdout)
+        self.assertIn("cached report hit", proc.stdout)
 
     def test_16_fast_delta_stats_match_full_recalculation(self):
         for i in range(35):
@@ -195,14 +195,14 @@ class TestLocalGitIntegration(GitFixture):
             **SUBPROCESS_TEXT,
         )
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("路径不存在", proc.stderr or "")
+        self.assertIn("Path does not exist", proc.stderr or "")
 
     def test_20_permission_denied_is_a_readable_error(self):
         # Deterministic fault injection: chmod is unreliable in CI running as
         # root, so exercise the real local-repo call with Git execution denied.
         with patch('commitlens.ingest.subprocess.run',
                    side_effect=PermissionError('EACCES: cannot execute git')):
-            with self.assertRaisesRegex(RuntimeError, '没有权限'):
+            with self.assertRaisesRegex(RuntimeError, 'No permission'):
                 read_log(self.repo)
 
     def test_18_generated_html_has_no_network_dependencies(self):

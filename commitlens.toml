@@ -1,5 +1,5 @@
-# CommitLens 配置。所有阈值都可以改，改完重新 scan 即可。
-# 这份文件本身会进报告页脚（哈希），保证结果可复现。
+# CommitLens configuration. Change thresholds and rerun scan.
+# The configuration is fingerprinted and included in the report footer.
 
 [general]
 window_days = 180
@@ -41,5 +41,5 @@ alpha = 0.05
 drop_pct = 0.25
 
 [report]
-title = "Git 提交历史健康度报告"
+title = "Git Commit History Health Report"
 team = ""

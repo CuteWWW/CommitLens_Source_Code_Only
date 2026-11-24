@@ -6,29 +6,32 @@ from collections import defaultdict
 
 from ..model import CheckResult, Evidence, Finding, Severity
 from ..stats import change_pct, linear_slope, mann_kendall
-from .base import Context, mean, register
+from .base import Context, count_label, mean, register
 
 
 def run(ctx: Context) -> list[CheckResult]:
     weekly = ctx.weekly()
     if not weekly:
-        return [_empty("窗口内没有提交，无法评估")]
+        return [_empty("No commits in the selected window; analysis unavailable")]
 
     min_weeks = ctx.cfg("trend", "min_weeks")
     if len(weekly) < min_weeks:
         return [
             CheckResult(
                 check="trend",
-                title="活跃度趋势",
+                title="Activity Trend",
                 severity=Severity.INFO,
-                summary=f"窗口只有 {len(weekly)} 周数据（少于 {min_weeks} 周），暂不做趋势判断",
+                summary=(
+                    f"The selected window contains only {len(weekly)} weeks of data "
+                    f"(minimum: {min_weeks}); trend analysis is unavailable"
+                ),
                 order=8,
                 stats={"weeks": len(weekly)},
                 chart={
                     "type": "line",
                     "labels": [d.strftime("%m-%d") for d, _ in weekly],
                     "values": [v for _, v in weekly],
-                    "unit": "次/周",
+                    "unit": "commits/week",
                 },
             )
         ]
@@ -41,7 +44,7 @@ def run(ctx: Context) -> list[CheckResult]:
 
     recent = values[-recent_w:]
     prev = values[-2 * recent_w:-recent_w] if len(values) >= 2 * recent_w else values[: len(values) - recent_w]
-    baseline_label = f"此前 {len(prev)} 个连续周"
+    baseline_label = f"the previous {len(prev)} consecutive weeks"
     if all(v == 0 for v in recent) and not any(prev):
         # When both adjacent windows are zero, a 0% 'change' falsely implies
         # stability. Compare with the most recent active weeks, and label the
@@ -49,7 +52,7 @@ def run(ctx: Context) -> list[CheckResult]:
         active = [v for v in values[:-recent_w] if v > 0][-recent_w:]
         if active:
             prev = active
-            baseline_label = f"此前最近 {len(active)} 个活跃周"
+            baseline_label = f"the previous {len(active)} active weeks"
     change = change_pct(mean(prev), mean(recent))
     slope = linear_slope(values)
     mk = mann_kendall(values)
@@ -74,25 +77,29 @@ def run(ctx: Context) -> list[CheckResult]:
     now = mean(recent)
     if base < 1.0:
         # 基线太小时百分比会失真（0.2 → 1.8 就是 +600%），直接说绝对量
-        trend_word = f"从每周 {base:.1f} 次变为 {now:.1f} 次"
+        trend_word = f"changed from {base:.1f} to {now:.1f} commits per week"
     elif change < 0:
-        trend_word = f"下降 {abs(change):.0%}"
+        trend_word = f"down {abs(change):.0%}"
     elif change > 0:
-        trend_word = f"上升 {change:.0%}"
+        trend_word = f"up {change:.0%}"
     else:
-        trend_word = "基本持平"
+        trend_word = "roughly flat"
 
     summary = (
-        f"最近 {recent_w} 周平均每周 {mean(recent):.1f} 次提交，"
-        f"{baseline_label}均值为 {mean(prev):.1f} 次，{trend_word}"
+        f"The last {recent_w} weeks averaged {mean(recent):.1f} commits per week, while "
+        f"{baseline_label} averaged {mean(prev):.1f}; activity is {trend_word}."
     )
     p_label = "p < 0.001" if p_value < 0.001 else f"p = {p_value:.3f}"
     if significant:
-        summary += f"（Mann-Kendall 趋势检验 {p_label}，统计显著）"
+        summary += f" Mann-Kendall trend test: {p_label}; statistically significant."
     else:
-        summary += "（趋势尚未达到统计显著，可能是正常波动）"
+        summary += " The trend is not statistically significant and may reflect normal variation."
     if trailing_zero:
-        summary += f"；截至分析日已连续 {trailing_zero} 周零提交"
+        summary += (
+            f" As of the analysis date, there "
+            f"{'has' if trailing_zero == 1 else 'have'} been "
+            f"{count_label(trailing_zero, 'consecutive zero-commit week')}."
+        )
 
     findings: list[Finding] = []
     if severity != Severity.OK:
@@ -106,25 +113,30 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="trend",
                 severity=severity,
-                title=f"最近 {recent_w} 周活跃度{trend_word}",
+                title=f"Activity over the last {recent_w} weeks is {trend_word}",
                 detail=(
-                    "活跃度下降本身不代表项目出问题——可能是进入收尾、可能是考试周。"
-                    "但它是一个值得确认的信号：如果是被动的（任务卡住、成员流失），"
-                    "越早处理代价越小；如果是主动的（按计划收尾），记录下来即可。"
+                    "A decline in activity does not prove that the project has a problem. It "
+                    "may reflect planned completion or a temporary slowdown. It is still worth "
+                    "confirming: passive declines caused by blockers or contributor loss become "
+                    "more expensive to resolve over time."
                 ),
                 advice=(
-                    "对照 backlog 与里程碑确认是否为计划内收尾；"
-                    "若是被动下降，用 cadence 检查项定位到具体成员，一对一确认。"
+                    "Compare the backlog and milestones to determine whether the decline is "
+                    "planned. If it is not, use the cadence checks to identify affected "
+                    "contributors and follow up directly."
                 ),
                 evidence=[
                     Evidence(
-                        label=f"最近 {len(weekly)} 周提交数",
-                        detail=f"整体斜率 {slope:+.2f} 次/周，{p_label}；"
-                               f"统计截止 {ctx.now.date()}（末尾零提交周已计入）",
+                        label=f"Weekly commits over the last {len(weekly)} weeks",
+                        detail=(
+                            f"Overall slope: {slope:+.2f} commits/week; {p_label}; "
+                            f"analysis cutoff: {ctx.now.date()} "
+                            "(trailing zero-commit weeks included)"
+                        ),
                         lines=[
-                            f"- {d.strftime('%Y-%m-%d')} 起那一周：{v} 次；"
-                            + ("提交示例 " + ", ".join(shas_by_week[d])
-                               if shas_by_week[d] else "无提交（零值证据）")
+                            f"- Week starting {d.strftime('%Y-%m-%d')}: {v} commits; "
+                            + ("example commits: " + ", ".join(shas_by_week[d])
+                               if shas_by_week[d] else "no commits (zero-value evidence)")
                             for (d, _), v in list(zip(weekly, values))[-12:]
                         ],
                         commit=ctx.commits[-1].sha,
@@ -136,7 +148,7 @@ def run(ctx: Context) -> list[CheckResult]:
     return [
         CheckResult(
             check="trend",
-            title="活跃度趋势",
+            title="Activity Trend",
             severity=severity,
             summary=summary,
             order=8,
@@ -156,7 +168,7 @@ def run(ctx: Context) -> list[CheckResult]:
                 "type": "line",
                 "labels": labels,
                 "values": [int(v) for v in values],
-                "unit": "次/周",
+                "unit": "commits/week",
             },
             findings=findings,
         )
@@ -166,7 +178,7 @@ def run(ctx: Context) -> list[CheckResult]:
 def _empty(summary: str) -> CheckResult:
     return CheckResult(
         check="trend",
-        title="活跃度趋势",
+        title="Activity Trend",
         severity=Severity.INFO,
         summary=summary,
         order=8,

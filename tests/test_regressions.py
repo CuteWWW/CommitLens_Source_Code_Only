@@ -50,9 +50,9 @@ class TestIssueRegressions(unittest.TestCase):
                    "xyz: add a feature", files=[FileChange("a.py", 4, 0)])
         cfg = Config({"message": {"require_type_prefix": True,
                                    "type_prefixes": ["feat", "fix"]}}).get
-        self.assertTrue(any("不在允许列表" in x for x in rule_violations(c, cfg)))
+        self.assertTrue(any("not in the allowed list" in x for x in rule_violations(c, cfg)))
         c.subject = "feat: add a feature"
-        self.assertFalse(any("类型前缀" in x for x in rule_violations(c, cfg)))
+        self.assertFalse(any("type prefix" in x.lower() for x in rule_violations(c, cfg)))
 
     def test_04_percentile_changes_giant_detection(self):
         now = datetime.now(timezone.utc).isoformat()

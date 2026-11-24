@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..model import CheckResult, Evidence, Finding, Severity
-from .base import Context, by_author, fmt_pct, median, register
+from .base import Context, by_author, count_label, fmt_pct, median, register
 
 
 def _weeks_span(ctx: Context) -> float:
@@ -23,8 +23,8 @@ def _others_median(rates: dict[str, float], author: str) -> float:
 def run(ctx: Context) -> list[CheckResult]:
     if not ctx.commits:
         return [
-            _empty("cadence_freq", "提交频率异常", 4),
-            _empty("cadence_dormant", "长期未提交", 5),
+            _empty("cadence_freq", "Commit Cadence", 4),
+            _empty("cadence_dormant", "Dormant Contributors", 5),
         ]
 
     per_author = by_author(ctx.commits)
@@ -57,10 +57,11 @@ def run(ctx: Context) -> list[CheckResult]:
         Severity.INFO if frequent else Severity.OK
     )
     freq_summary = (
-        f"窗口内 {total} 次提交、{n_people} 人参与，人均 {mean_count:.1f} 次"
+        f"{total} commits from {count_label(n_people, 'contributor')} in the selected window, "
+        f"averaging {mean_count:.1f} commits per contributor"
         + (
-            f"；{len(frequent)} 人提交频率显著高于其他人"
-            if frequent else "；没有人的提交频率明显偏离团队"
+            f"; {len(frequent)} contributors commit substantially more often than their peers"
+            if frequent else "; no contributor has an unusual commit frequency"
         )
     )
 
@@ -70,22 +71,28 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="cadence_freq",
                 severity=freq_sev,
-                title=f"{len(frequent)} 人的提交频率显著高于团队中位数",
+                title=(
+                    f"{count_label(len(frequent), 'contributor')} "
+                    f"{'commits' if len(frequent) == 1 else 'commit'} substantially more often "
+                    "than the team median"
+                ),
                 detail=(
-                    "提交频率高不必然是坏事：可能承担了更多任务，也可能是提交粒度过细"
-                    "（每改一行就提交一次），后者会让历史难以阅读。这个指标只用于观察，"
-                    "不应作为个人绩效依据。"
+                    "A high commit rate is not necessarily a problem: the contributor may be "
+                    "handling more work, or the history may use commits that are too granular. "
+                    "This metric is observational and must not be used for individual performance "
+                    "evaluation."
                 ),
                 advice=(
-                    "如果是粒度过细，约定「一次提交对应一个可独立理解的改动」；"
-                    "如果是任务分配不均，检查一下 backlog 的分配。"
+                    "If commits are too granular, agree that each commit should represent one "
+                    "independently understandable change. If work is unevenly assigned, review "
+                    "the backlog allocation."
                 ),
                 evidence=[
                     Evidence(
                         label=a,
                         detail=(
-                            f"{count} 次提交 / {weeks:.0f} 周 ≈ {r:.2f} 次每周"
-                            f"（其他人中位数 {_others_median(rates, a):.2f}）"
+                            f"{count} commits over {weeks:.0f} weeks (~{r:.2f} per week; "
+                            f"peers' median: {_others_median(rates, a):.2f})"
                         ),
                         commit=max(per_author[a], key=lambda c: c.date).sha,
                     )
@@ -100,12 +107,12 @@ def run(ctx: Context) -> list[CheckResult]:
         "type": "bar",
         "labels": [a for a, _ in top_authors],
         "values": [c for _, c in top_authors],
-        "unit": "次",
+        "unit": "commits",
     }
 
     freq_result = CheckResult(
         check="cadence_freq",
-        title="提交频率异常",
+        title="Commit Cadence",
         severity=freq_sev,
         summary=freq_summary,
         order=4,
@@ -133,13 +140,15 @@ def run(ctx: Context) -> list[CheckResult]:
         Severity.WARN if dormant else Severity.OK
     )
     if dormant:
-        who = "、".join(a for a, *_ in dormant[:3])
+        who = ", ".join(a for a, *_ in dormant[:3])
         dormant_summary = (
-            f"{len(dormant)} 人已连续 ≥{dormant_days} 天没有提交（{who}），"
-            f"占 {fmt_pct(ratio_dormant)} 的贡献者"
+            f"{count_label(len(dormant), 'contributor')} "
+            f"{'has' if len(dormant) == 1 else 'have'} not committed for at least "
+            f"{dormant_days} days "
+            f"({who}), representing {fmt_pct(ratio_dormant)} of contributors"
         )
     else:
-        dormant_summary = f"没有成员超过 {dormant_days} 天未提交"
+        dormant_summary = f"No contributor has been inactive for more than {dormant_days} days"
 
     dormant_findings: list[Finding] = []
     if dormant:
@@ -147,16 +156,25 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="cadence_dormant",
                 severity=dormant_sev,
-                title=f"{len(dormant)} 人已连续 {dormant_days} 天以上没有提交",
-                detail=(
-                    "长期沉默的成员通常意味着三件事之一：任务已完成、任务被卡住、"
-                    "或已经脱离团队。越晚发现越难补救，所以这条要按周看而不是按学期看。"
+                title=(
+                    f"{count_label(len(dormant), 'contributor')} "
+                    f"{'has' if len(dormant) == 1 else 'have'} been inactive for at least "
+                    f"{dormant_days} days"
                 ),
-                advice="一对一确认是否被阻塞；如果是任务空了，从 backlog 里补；如果是退出，及时调整分工。",
+                detail=(
+                    "A long period without commits usually means one of three things: the work "
+                    "is complete, the contributor is blocked, or the contributor has left the "
+                    "team. Check this weekly so that hidden blockers are found early."
+                ),
+                advice=(
+                    "Check in directly to determine whether the contributor is blocked. Assign "
+                    "more work if the backlog is empty, or adjust ownership promptly if the "
+                    "contributor is no longer involved."
+                ),
                 evidence=[
                     Evidence(
                         label=a,
-                        detail=f"最后提交 {last.date()}（距今 {gap} 天），此前共 {count} 次",
+                        detail=f"Last commit {last.date()} ({gap} days ago); {count} commits before that",
                         commit=max(cs, key=lambda c: c.date).sha,
                     )
                     for a, gap, count, last, cs in dormant[:6]
@@ -166,14 +184,14 @@ def run(ctx: Context) -> list[CheckResult]:
 
     dormant_chart = {
         "type": "bar",
-        "labels": [a for a, *_ in dormant] or ["无"],
+        "labels": [a for a, *_ in dormant] or ["None"],
         "values": [g for _, g, *_ in dormant] or [0],
-        "unit": "天未提交",
+        "unit": "days since last commit",
     }
 
     dormant_result = CheckResult(
         check="cadence_dormant",
-        title="长期未提交",
+        title="Dormant Contributors",
         severity=dormant_sev,
         summary=dormant_summary,
         order=5,
@@ -190,6 +208,6 @@ def _empty(check: str, title: str, order: int) -> CheckResult:
         check=check,
         title=title,
         severity=Severity.INFO,
-        summary="窗口内没有提交，无法评估",
+        summary="No commits in the selected window; analysis unavailable",
         order=order,
     )

@@ -71,7 +71,7 @@ def main():
                 raise FileNotFoundError(f'Original archive/reference missing: {source}')
         record = {'name': ARCHIVE_ROOT, 'version': '0.2.0',
                   'issue_counts': {'repaired': 23, 'partial': 18, 'external_evidence': 11},
-                  'measurements': {'tests': 49, 'main_process_statement_coverage': .745,
+                  'measurements': {'tests': 50, 'main_process_statement_coverage': .745,
                                    'synthetic_500k_full_s': 20.379,
                                    'synthetic_500k_new_s': 1.243},
                   'warning': 'Human sprints, team identity, real datasets and official IEEE formatting unverified',

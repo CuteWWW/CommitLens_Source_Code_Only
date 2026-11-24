@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -56,6 +57,14 @@ class TestMaterializedResults(unittest.TestCase):
             self.assertIsNotNone(load_state(path, cfg, now))
             self.assertIsNone(load_state(path, cfg, now + timedelta(days=1)))
             self.assertIsNone(load_state(path, Config({"trend": {"alpha": .01}}), now))
+
+    def test_incremental_results_use_english_tool_text(self):
+        ctx = make_ctx(weekly_log([10, 9, 8, 7, 6, 5, 4, 3]))
+        state = new_state(ctx.config, ctx.now, {c.email: c.author for c in ctx.commits})
+        add_commits(state, ctx.commits, ctx.config)
+        results = run_from_state(state, ctx.config, ctx.now)
+        output = json.dumps([result.to_dict() for result in results], ensure_ascii=False)
+        self.assertNotRegex(output, r"[\u4e00-\u9fff]")
 
 
 if __name__ == "__main__":

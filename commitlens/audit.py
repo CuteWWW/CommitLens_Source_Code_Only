@@ -20,7 +20,7 @@ def audit_evidence(diagnosis: Diagnosis, commits: list[Commit]) -> dict:
                     has_witness = True
                 elif ev.commit:
                     failures.append(f"{check.check}[{idx}]: unknown commit {ev.commit}")
-                elif ev.lines and any("零值证据" in line for line in ev.lines):
+                elif ev.lines and any("zero-value evidence" in line for line in ev.lines):
                     has_witness = True
             if has_witness:
                 supported += 1

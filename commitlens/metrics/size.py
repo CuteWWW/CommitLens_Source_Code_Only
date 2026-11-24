@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 from ..model import CheckResult, Evidence, Finding, Severity
-from .base import Context, fmt_pct, pct, percentile, register
+from .base import Context, count_label, fmt_pct, pct, percentile, register
 
 BUCKETS = [
-    ("1 个文件", lambda n: n == 1),
-    ("2-3 个", lambda n: 2 <= n <= 3),
-    ("4-9 个", lambda n: 4 <= n <= 9),
-    ("10-29 个", lambda n: 10 <= n <= 29),
-    ("30-99 个", lambda n: 30 <= n <= 99),
-    ("100+ 个", lambda n: n >= 100),
+    ("1 file", lambda n: n == 1),
+    ("2-3 files", lambda n: 2 <= n <= 3),
+    ("4-9 files", lambda n: 4 <= n <= 9),
+    ("10-29 files", lambda n: 10 <= n <= 29),
+    ("30-99 files", lambda n: 30 <= n <= 99),
+    ("100+ files", lambda n: n >= 100),
 ]
 
 
 def run(ctx: Context) -> list[CheckResult]:
     commits = ctx.commits
     if not commits:
-        return [_empty("size", "单次改动规模", 2), _empty("giant", "巨型提交", 3)]
+        return [_empty("size", "Change Size", 2), _empty("giant", "Oversized Commits", 3)]
 
     files = [float(c.nfiles) for c in commits]
     churns = [float(c.churn) for c in commits]
@@ -53,9 +53,9 @@ def run(ctx: Context) -> list[CheckResult]:
         Severity.INFO if wide else Severity.OK
     )
     size_summary = (
-        f"提交改动中位数 {percentile(files, 50):.0f} 个文件、"
-        f"{percentile(churns, 50):.0f} 行；P90 为 {percentile(files, 90):.0f} 个文件，"
-        f"{len(wide)} 个提交改了超过 {max_files} 个文件"
+        f"Median commit size is {percentile(files, 50):.0f} files and "
+        f"{percentile(churns, 50):.0f} lines; P90 is {percentile(files, 90):.0f} files. "
+        f"{count_label(len(wide), 'commit')} changed more than {max_files} files."
     )
 
     size_findings: list[Finding] = []
@@ -65,19 +65,30 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="size",
                 severity=size_sev,
-                title=f"{len(wide)} 个提交改动文件数超过阈值（{max_files} 个）",
-                detail=(
-                    "单个提交横跨太多文件时，评审者很难在有限时间内判断改动是否安全，"
-                    "回滚时也只能整块撤回。大规模改动本身不是错误，但需要拆成"
-                    "「可独立理解、可独立回滚」的若干提交。"
+                title=(
+                    f"{count_label(len(wide), 'commit')} "
+                    f"{'exceeds' if len(wide) == 1 else 'exceed'} "
+                    f"the file-count threshold ({max_files})"
                 ),
-                advice="按功能点拆分提交；纯格式化/重命名单独一个提交；依赖升级单独一个提交。",
+                detail=(
+                    "When one commit spans too many files, reviewers cannot easily determine "
+                    "whether the change is safe, and rollback can only revert the entire batch. "
+                    "A large change is not inherently wrong, but it should be split into commits "
+                    "that can be understood and reverted independently."
+                ),
+                advice=(
+                    "Split commits by functional change. Keep formatting-only changes, renames, "
+                    "and dependency upgrades in separate commits."
+                ),
                 evidence=[
                     Evidence(
                         label=f"commit {c.short_sha}",
-                        detail=f"{c.nfiles} 个文件 / {c.churn} 行 · {c.author} ·「{c.subject}」",
+                        detail=(
+                            f"Files changed: {c.nfiles} / Lines changed: {c.churn} · "
+                            f"{c.author} · \"{c.subject}\""
+                        ),
                         lines=[f"- {p}" for p in c.paths[:12]]
-                        + ([f"- …… 还有 {c.nfiles - 12} 个文件"] if c.nfiles > 12 else []),
+                        + ([f"- ... and {c.nfiles - 12} more files"] if c.nfiles > 12 else []),
                         commit=c.sha,
                     )
                     for c in wide[:top_n]
@@ -90,12 +101,12 @@ def run(ctx: Context) -> list[CheckResult]:
         "type": "bar",
         "labels": [name for name, _ in BUCKETS],
         "values": bucket_counts,
-        "unit": "个提交",
+        "unit": "commits",
     }
 
     size_result = CheckResult(
         check="size",
-        title="单次改动规模",
+        title="Change Size",
         severity=size_sev,
         summary=size_summary,
         order=2,
@@ -118,10 +129,11 @@ def run(ctx: Context) -> list[CheckResult]:
         Severity.INFO if giant else Severity.OK
     )
     giant_summary = (
-        f"{len(giant)} 个规模异常提交（≥ {max_files} 文件、≥ {max_lines} 行"
-        f"或 P{rel_q:g} 极端离群），"
-        f"占 {fmt_pct(len(giant) / len(commits))} 的提交数、"
-        f"却吃掉 {fmt_pct(giant_churn)} 的代码改动量"
+        f"Oversized commit signals: {len(giant)} "
+        f"(>= {max_files} files, >= {max_lines} lines, or above the P{rel_q:g} tail). "
+        f"{'It accounts' if len(giant) == 1 else 'They account'} for "
+        f"{fmt_pct(len(giant) / len(commits))} of commits and "
+        f"{fmt_pct(giant_churn)} of all changed lines."
     )
 
     giant_findings: list[Finding] = []
@@ -131,25 +143,30 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="giant",
                 severity=giant_sev,
-                title=f"{len(giant)} 个巨型提交吃掉了 {fmt_pct(giant_churn)} 的代码变更量",
+                title=(
+                    f"Oversized commits: {len(giant)} accounting for "
+                    f"{fmt_pct(giant_churn)} of changed lines"
+                ),
                 detail=(
-                    "大规模修改可能提高评审难度，但规模并不能证明代码质量差，"
-                    "也不能判断是否混合了多个关注点。请结合 diff 和变更目的人工复核。"
+                    "Large changes can make review harder, but size alone does not prove poor "
+                    "code quality or confirm that unrelated concerns were mixed together. "
+                    "Review the diff and the stated purpose before drawing conclusions."
                 ),
                 advice=(
-                    "把大改动拆成「准备型改动 + 功能改动 + 清理型改动」；"
-                    "确实无法拆分的（如批量重命名）在提交信息里标明，评审时跳过逐行检查。"
+                    "Split large changes into preparation, functional, and cleanup commits. "
+                    "For changes that cannot be split, such as bulk renames, state that in the "
+                    "message and use a review strategy that does not require line-by-line checks."
                 ),
                 evidence=[
                     Evidence(
                         label=f"commit {c.short_sha}",
                         detail=(
-                            f"{c.nfiles} 个文件 / {c.churn} 行"
-                            f"（占全项目改动 {pct(c.churn, total_churn) * 100:.1f}%）"
+                            f"{c.nfiles} files / {c.churn} lines "
+                            f"({pct(c.churn, total_churn) * 100:.1f}% of all changed lines)"
                             f" · {c.author}"
                         ),
                         lines=[f"- {p}" for p in c.paths[:12]]
-                        + ([f"- …… 还有 {c.nfiles - 12} 个文件"] if c.nfiles > 12 else []),
+                        + ([f"- ... and {c.nfiles - 12} more files"] if c.nfiles > 12 else []),
                         commit=c.sha,
                     )
                     for c in giant[:top_n]
@@ -159,14 +176,14 @@ def run(ctx: Context) -> list[CheckResult]:
 
     giant_chart = {
         "type": "bar",
-        "labels": [c.short_sha for c in giant[:8]] or ["无"],
+        "labels": [c.short_sha for c in giant[:8]] or ["None"],
         "values": [c.churn for c in giant[:8]] or [0],
-        "unit": "行改动",
+        "unit": "changed lines",
     }
 
     giant_result = CheckResult(
         check="giant",
-        title="巨型提交",
+        title="Oversized Commits",
         severity=giant_sev,
         summary=giant_summary,
         order=3,
@@ -193,6 +210,6 @@ def _empty(check: str, title: str, order: int) -> CheckResult:
         check=check,
         title=title,
         severity=Severity.INFO,
-        summary="窗口内没有提交，无法评估",
+        summary="No commits in the selected window; analysis unavailable",
         order=order,
     )

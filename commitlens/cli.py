@@ -26,7 +26,7 @@ from .diagnose import diagnose
 from .identity import normalize_identities, pseudonymize_authors
 from .ingest import build_git_command, filter_commits, parse_log_text, read_log
 from .metrics import CHECK_TITLES, Context, run_all
-from .model import SEVERITY_CN, Severity
+from .model import Severity
 from .report.html import render as render_html
 from .rollup import (add_commits, include_new_pseudonymous_authors, load_state,
                      make_context, new_state, run_from_state, save_state, state_path)
@@ -39,37 +39,39 @@ ICON = {"ok": "[OK]", "info": "[--]", "warn": "[! ]", "alert": "[X!]"}
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="commitlens",
-        description="Git 提交历史健康度诊断：8 个检查项 → 结论 + 证据 + 建议",
+        description=(
+            "Git history health diagnosis: 8 checks -> findings, evidence, and recommendations"
+        ),
     )
     p.add_argument("--version", action="version", version=f"commitlens {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("scan", help="分析一个仓库并生成报告")
-    s.add_argument("repo", nargs="?", default=".", help="仓库路径，默认当前目录")
-    s.add_argument("--config", help=f"配置文件，默认找 ./{CONFIG_FILENAME}")
-    s.add_argument("--log", help="直接从一份 git log 文本分析（不需要 git）")
-    s.add_argument("--since", type=int, help="只分析最近 N 天，覆盖配置里的 window_days")
-    s.add_argument("--as-of", help="固定分析截止时间（ISO 日期或 datetime），用于复验历史快照")
-    s.add_argument("--until", help="Git 的历史截止日期（仅适用于仓库采集）")
-    s.add_argument("--all-branches", action="store_true", help="采集全部本地分支引用的可达提交")
-    s.add_argument("--include-merges", action="store_true", help="包括合并提交，比较第一父提交")
-    s.add_argument("--incremental", action="store_true", help="使用本地校验缓存，前进的 HEAD 只采集新增提交")
-    s.add_argument("--cache-dir", help="增量分析缓存目录（默认输出目录下的 .commitlens-cache）")
-    s.add_argument("--show-authors", action="store_true", help="显式展示 Git 作者姓名，默认显示 Dev 编号")
-    s.add_argument("--out", default="report.html", help="HTML 报告输出路径")
-    s.add_argument("--json", dest="json_out", help="另外输出一份 JSON")
-    s.add_argument("--title", help="报告标题")
-    s.add_argument("--team", help="团队名，显示在页头")
+    s = sub.add_parser("scan", help="Analyze a repository and generate a report")
+    s.add_argument("repo", nargs="?", default=".", help="Repository path (default: current directory)")
+    s.add_argument("--config", help=f"Configuration file (default: ./{CONFIG_FILENAME})")
+    s.add_argument("--log", help="Analyze a saved git log without running Git")
+    s.add_argument("--since", type=int, help="Analyze only the last N days")
+    s.add_argument("--as-of", help="Fixed ISO date or datetime for a reproducible analysis")
+    s.add_argument("--until", help="Git history cutoff date")
+    s.add_argument("--all-branches", action="store_true", help="Include commits from all local branches")
+    s.add_argument("--include-merges", action="store_true", help="Include merge commits")
+    s.add_argument("--incremental", action="store_true", help="Reuse validated local cache")
+    s.add_argument("--cache-dir", help="Incremental cache directory")
+    s.add_argument("--show-authors", action="store_true", help="Show Git author names")
+    s.add_argument("--out", default="report.html", help="HTML report path")
+    s.add_argument("--json", dest="json_out", help="Optional JSON output path")
+    s.add_argument("--title", help="Report title")
+    s.add_argument("--team", help="Team name displayed in the report header")
     s.add_argument(
         "--fail-on",
         choices=["none", "warn", "alert"],
         default="none",
-        help="出现该等级及以上的问题时返回非零退出码，便于接 CI",
+        help="Return a non-zero exit code at or above this severity (for CI)",
     )
 
-    sub.add_parser("checks", help="列出 8 个检查项")
-    i = sub.add_parser("init", help="生成一份默认配置")
-    i.add_argument("--force", action="store_true", help="覆盖已存在的配置")
+    sub.add_parser("checks", help="List the eight checks")
+    i = sub.add_parser("init", help="Generate a default configuration")
+    i.add_argument("--force", action="store_true", help="Overwrite an existing configuration")
     return p
 
 
@@ -96,10 +98,10 @@ def main(argv: list[str] | None = None) -> int:
 def cmd_init(args) -> int:
     path = Path(CONFIG_FILENAME)
     if path.exists() and not args.force:
-        print(f"{path} 已存在，加 --force 覆盖。")
+        print(f"{path} already exists. Use --force to overwrite it.")
         return 1
     write_default_config(path)
-    print(f"已生成 {path}，按需修改阈值后重新运行 scan。")
+    print(f"Created {path}. Adjust thresholds as needed and run scan again.")
     return 0
 
 
@@ -107,12 +109,12 @@ def cmd_scan(args) -> int:
     started = time.perf_counter()
     repo = Path(args.repo).expanduser()
     if args.since is not None and args.since < 0:
-        print("--since 不可为负数", file=sys.stderr)
+        print("--since cannot be negative", file=sys.stderr)
         return 2
     try:
         now = _parse_as_of(args.as_of) if args.as_of else datetime.now(timezone.utc)
     except ValueError as exc:
-        print(f"--as-of 日期无效：{exc}", file=sys.stderr)
+        print(f"Invalid --as-of date: {exc}", file=sys.stderr)
         return 2
 
     if args.config:
@@ -126,7 +128,7 @@ def cmd_scan(args) -> int:
     try:
         config = Config.load(config_path)
     except (ValueError, OSError) as exc:
-        print(f"配置加载失败：{exc}", file=sys.stderr)
+        print(f"Failed to load configuration: {exc}", file=sys.stderr)
         return 2
     window = args.since if args.since is not None else config.get("general", "window_days")
     config.data["general"]["window_days"] = window
@@ -159,17 +161,17 @@ def cmd_scan(args) -> int:
 
     if args.log:
         if args.all_branches or args.include_merges or args.until:
-            print("--log 已是固定输入，不能同时使用 Git 采集选项", file=sys.stderr)
+            print("--log cannot be combined with Git collection options", file=sys.stderr)
             return 2
         try:
             text = Path(args.log).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            print(f"日志读取失败：{exc}", file=sys.stderr)
+            print(f"Failed to read log file: {exc}", file=sys.stderr)
             return 2
-        source = f"日志文件 {Path(args.log).resolve()}"
+        source = f"Log file: {Path(args.log).resolve()}"
     else:
         if not repo.exists():
-            print(f"路径不存在：{repo}", file=sys.stderr)
+            print(f"Path does not exist: {repo}", file=sys.stderr)
             return 2
         try:
             if args.incremental:
@@ -194,7 +196,7 @@ def cmd_scan(args) -> int:
             git_version = subprocess.run(["git", "--version"], capture_output=True,
                                          text=True, check=False).stdout.strip()
         except (RuntimeError, OSError) as exc:
-            print(f"读取失败：{exc}", file=sys.stderr)
+            print(f"Failed to collect repository data: {exc}", file=sys.stderr)
             return 2
 
     report_spec = {
@@ -211,7 +213,7 @@ def cmd_scan(args) -> int:
     if cached:
         severity_rank = can_reuse_render(cached, report_spec, out, json_path)
         if severity_rank is not None:
-            print(f"CommitLens：缓存报告命中，HEAD {revision[:12]} 未变化；报告 {out}")
+            print(f"CommitLens: cached report hit, HEAD {revision[:12]} unchanged; report: {out}")
             return _exit_for_severity(severity_rank, args.fail_on)
 
     collected_at = time.perf_counter()
@@ -254,8 +256,9 @@ def cmd_scan(args) -> int:
         parsed_at = time.perf_counter()
         results = run_from_state(rollup, config, now)
         identity_message = (
-            "增量更新：复用已核实的身份映射；匿名新成员会安全重编号，"
-            "显式实名模式遇到未知身份则回退全量"
+            "Incremental update: reused validated identity mappings; anonymous new contributors "
+            "were assigned new labels, and unknown identities in author-name mode triggered a "
+            "full rebuild."
         )
     else:
         commits = parse_log_text(text)
@@ -269,7 +272,7 @@ def cmd_scan(args) -> int:
         try:
             identity_audit = normalize_identities(commits, config.get("identity", "aliases"))
         except ValueError as exc:
-            print(f"身份映射失败：{exc}", file=sys.stderr)
+            print(f"Identity mapping failed: {exc}", file=sys.stderr)
             return 2
         if not args.show_authors:
             email_order = sorted({c.email for c in commits})
@@ -291,21 +294,27 @@ def cmd_scan(args) -> int:
             add_commits(rollup, commits, config)
             rollup["head"] = cached.head
         identity_message = (
-            f"{identity_audit.identities} 位独立身份；别名归并 {identity_audit.alias_merges} 次；"
-            f"同名不同邮箱 {', '.join(identity_audit.duplicate_names) or '无'}；"
-            f"同邮箱改名 {identity_audit.renamed_emails} 次"
+            f"{identity_audit.identities} validated identities; "
+            f"{identity_audit.alias_merges} alias merges; "
+            f"duplicate names with different emails: "
+            f"{', '.join(identity_audit.duplicate_names) or 'none'}; "
+            f"email renames: {identity_audit.renamed_emails}."
         )
 
     diagnosis = diagnose(results, n_commits=ctx.commit_count,
                          min_commits=config.get("general", "min_commits"))
     evidence_audit = audit_evidence(diagnosis, ctx.commits)
     if not evidence_audit["passed"]:
-        print("证据完整性验收失败：" + "; ".join(evidence_audit["failures"]),
+        print("Evidence audit failed: " + "; ".join(evidence_audit["failures"]),
               file=sys.stderr)
         return 3
     analyzed_at = time.perf_counter()
 
-    config_text = config_path.read_text(encoding="utf-8") if config_path else "（未使用配置文件）"
+    config_text = (
+        config_path.read_text(encoding="utf-8")
+        if config_path else
+        "(No configuration file was used.)"
+    )
     meta = {
         "title": args.title or config.get("report", "title"),
         "team": args.team if args.team is not None else config.get("report", "team"),
@@ -316,7 +325,7 @@ def cmd_scan(args) -> int:
         "git_command": git_command,
         "config_toml": config_text,
         "effective_config": json.dumps(config.data, ensure_ascii=False, sort_keys=True, indent=2),
-        "config_source": str(config_path.resolve()) if config_path else "内置默认值",
+        "config_source": str(config_path.resolve()) if config_path else "Built-in defaults",
         "command": shlex.join(command_args),
         "data_sha256": hashlib.sha256(text.encode()).hexdigest(),
         "git_version": git_version,
@@ -378,26 +387,28 @@ def cmd_scan(args) -> int:
 
 def print_summary(ctx, diagnosis, out: Path, json_out: str | None) -> None:
     rng = ctx.date_range
-    span = f"{rng[0]} → {rng[1]}" if rng else "无数据"
+    span = f"{rng[0]} -> {rng[1]}" if rng else "No data"
     print(f"\nCommitLens v{__version__}")
-    print(f"仓库：{ctx.repo}")
-    print(f"提交 {ctx.commit_count} · 贡献者 {len(ctx.authors)} · {span} · 窗口 {ctx.config.get('general', 'window_days')} 天")
-    score = diagnosis.score if diagnosis.scorable else "暂不评分"
-    print(f"\n综合评分 {score}（{diagnosis.grade}）\n")
+    print(f"Repository: {ctx.repo}")
+    print(
+        f"Commits: {ctx.commit_count} · Contributors: {len(ctx.authors)} · {span} · "
+        f"Window: {ctx.config.get('general', 'window_days')} days"
+    )
+    score = diagnosis.score if diagnosis.scorable else "Not scored"
+    print(f"\nOverall score: {score} ({diagnosis.grade})\n")
     min_commits = ctx.config.get("general", "min_commits")
     if ctx.commit_count < min_commits:
         print(
-            f"  !! 警告：窗口内只有 {ctx.commit_count} 个提交（< {min_commits}），"
-            "百分比和排名可能只是噪声。\n"
-            "     先用 git rev-list --count HEAD 确认仓库历史是否完整，"
-            "或加大 --since。\n"
+            f"  !! Warning: only {ctx.commit_count} commits are in the window "
+            f"(minimum: {min_commits}); percentages and rankings may be noisy.\n"
+            "     Confirm history with git rev-list --count HEAD or increase --since.\n"
         )
     for r in diagnosis.results:
         mark = ICON.get(r.severity.value, "·")
         print(f"  {mark} {r.order}. {r.title}  {r.summary}")
-    print(f"\n报告：{out}")
+    print(f"\nReport: {out}")
     if json_out:
-        print(f"JSON：{json_out}")
+        print(f"JSON: {json_out}")
 
 
 def _parse_as_of(raw: str) -> datetime:
@@ -436,16 +447,16 @@ def _pad(s: str, width: int) -> str:
 
 def print_checks() -> None:
     desc = {
-        "message": "标题长度、类型前缀、空话、issue 关联、大改动是否有正文",
-        "size": "单次改动的文件数与行数分布",
-        "giant": "超过阈值的巨型提交，及其占全部改动的比例",
-        "cadence_freq": "谁的提交频率显著高于团队中位数",
-        "cadence_dormant": "谁已连续多天没有提交",
-        "hotspot": "哪些文件被改得最频繁、涉及多少人",
-        "ownership": "哪些文件的知识集中在一个人身上（巴士因子）",
-        "trend": "最近几周的活跃度是否显著下降",
+        "message": "Subject length, type prefixes, vague wording, issue links, and change bodies",
+        "size": "Distribution of changed files and lines per commit",
+        "giant": "Oversized commits and their share of all changed lines",
+        "cadence_freq": "Contributors whose commit frequency is well above the team median",
+        "cadence_dormant": "Contributors with no recent commits",
+        "hotspot": "Most frequently changed files and their contributor coverage",
+        "ownership": "Files with concentrated change activity",
+        "trend": "Whether recent activity has declined significantly",
     }
-    print("CommitLens 的 8 个检查项：\n")
+    print("CommitLens checks:\n")
     for i, (key, title) in enumerate(CHECK_TITLES.items(), 1):
         print(f"  {i}. {_pad(title, 14)}{desc.get(key, '')}")
 

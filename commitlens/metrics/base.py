@@ -98,6 +98,11 @@ def fmt_pct(x: float) -> str:
     return f"{x * 100:.0f}%"
 
 
+def count_label(n: int, singular: str, plural: str | None = None) -> str:
+    word = singular if n == 1 else (plural or singular + "s")
+    return f"{n} {word}"
+
+
 def mean(xs: list[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 

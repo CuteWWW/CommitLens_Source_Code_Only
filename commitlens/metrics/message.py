@@ -6,7 +6,7 @@ import re
 from collections import Counter
 
 from ..model import CheckResult, Commit, Evidence, Finding, Severity
-from .base import Context, fmt_pct, register
+from .base import Context, count_label, fmt_pct, register
 
 ISSUE_RE = re.compile(r"(#\d+|\b[A-Z][A-Z0-9]+-\d+\b)")
 TYPE_RE = re.compile(r"^([a-z]+)(\([^)]+\))?!?:\s")
@@ -21,27 +21,27 @@ def rule_violations(commit: Commit, cfg) -> list[str]:
     max_len = cfg("message", "max_subject_length")
     min_len = cfg("message", "min_subject_length")
     if len(subject) > max_len:
-        issues.append(f"标题过长（{len(subject)} > {max_len} 字符）")
+        issues.append(f"Subject too long ({len(subject)} > {max_len} characters)")
     if len(subject) < min_len:
-        issues.append(f"标题过短（{len(subject)} < {min_len} 字符）")
+        issues.append(f"Subject too short ({len(subject)} < {min_len} characters)")
 
     if cfg("message", "require_type_prefix"):
         match = TYPE_RE.match(subject)
         allowed = {str(t).lower() for t in cfg("message", "type_prefixes")}
         if not match:
-            issues.append("缺少类型前缀（如 feat: / fix:）")
+            issues.append("Missing type prefix (for example, feat: or fix:)")
         elif match.group(1).lower() not in allowed:
-            issues.append(f"类型前缀 {match.group(1)!r} 不在允许列表中")
+            issues.append(f"Type prefix {match.group(1)!r} is not in the allowed list")
 
     if _is_vague(subject, cfg("message", "vague_words")):
-        issues.append("内容空泛，看不出改了什么")
+        issues.append("Vague subject; it does not explain what changed")
 
     if cfg("message", "require_issue_ref") and not ISSUE_RE.search(commit.message):
-        issues.append("没有关联 issue 编号")
+        issues.append("No linked issue reference")
 
     need_body = cfg("message", "require_body_churn")
     if need_body and commit.churn >= need_body and not body:
-        issues.append(f"改动 {commit.churn} 行却没有正文说明")
+        issues.append(f"{commit.churn} changed lines without an explanatory body")
 
     return issues
 
@@ -72,13 +72,14 @@ def run(ctx: Context) -> list[CheckResult]:
         if v:
             offenders.append((c, v))
             for item in v:
-                rule_counter[item.split("（")[0]] += 1
+                rule_counter[item.split(" (", 1)[0]] += 1
 
     ratio = len(offenders) / total
     severity = _severity(ratio)
     summary = (
-        f"{fmt_pct(ratio)} 的提交不符合规范（{len(offenders)}/{total}）"
-        f"，最常见问题：{rule_counter.most_common(1)[0][0] if rule_counter else '无'}"
+        f"{fmt_pct(ratio)} of commits do not meet the message rules "
+        f"({len(offenders)}/{total}); most common issue: "
+        f"{rule_counter.most_common(1)[0][0] if rule_counter else 'none'}"
     )
 
     findings: list[Finding] = []
@@ -87,7 +88,7 @@ def run(ctx: Context) -> list[CheckResult]:
         evidence = [
             Evidence(
                 label=f"commit {c.short_sha}",
-                detail=f"「{c.subject}」改动 {c.nfiles} 个文件 / {c.churn} 行",
+                detail=f"\"{c.subject}\" changed {c.nfiles} files / {c.churn} lines",
                 lines=["- " + v for v in violations],
                 commit=c.sha,
             )
@@ -97,15 +98,19 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="message",
                 severity=severity,
-                title=f"{len(offenders)} 个提交的信息无法说明改了什么",
+                title=(
+                    f"{count_label(len(offenders), 'commit')} "
+                    f"{'does' if len(offenders) == 1 else 'do'} not explain what changed"
+                ),
                 detail=(
-                    "提交信息是评审者理解改动的第一入口。标题空泛、长度失控或缺少"
-                    "背景说明，会迫使人去读 diff 才能判断这个提交在干什么。"
+                    "Commit messages are the first place reviewers look to understand a change. "
+                    "Vague, badly sized, or unexplained subjects force reviewers to inspect the "
+                    "diff before they can determine the purpose of the commit."
                 ),
                 advice=(
-                    "约定标题格式（建议 `<type>: <做了什么>`，不超过 72 字符）；"
-                    "改动超过 200 行时在正文写清「为什么改」；"
-                    "团队统一后可用 require_type_prefix 在提交前拦截。"
+                    "Use a consistent subject format such as `<type>: <what changed>` and keep "
+                    "it under 72 characters. For changes above 200 lines, explain why the change "
+                    "is needed in the body. Teams can enforce prefixes with require_type_prefix."
                 ),
                 evidence=evidence,
             )
@@ -113,15 +118,15 @@ def run(ctx: Context) -> list[CheckResult]:
 
     chart = {
         "type": "bar",
-        "labels": [k for k, _ in rule_counter.most_common(6)] or ["无违规"],
+        "labels": [k for k, _ in rule_counter.most_common(6)] or ["No violations"],
         "values": [v for _, v in rule_counter.most_common(6)] or [0],
-        "unit": "次",
+        "unit": "occurrences",
     }
 
     return [
         CheckResult(
             check="message",
-            title="提交信息规范",
+            title="Commit Message Quality",
             severity=severity,
             summary=summary,
             order=1,
@@ -150,8 +155,8 @@ def _severity(ratio: float) -> Severity:
 def _empty() -> CheckResult:
     return CheckResult(
         check="message",
-        title="提交信息规范",
+        title="Commit Message Quality",
         severity=Severity.INFO,
-        summary="窗口内没有提交，无法评估",
+        summary="No commits in the selected window; analysis unavailable",
         order=1,
     )

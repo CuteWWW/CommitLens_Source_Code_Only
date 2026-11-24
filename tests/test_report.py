@@ -12,7 +12,7 @@ from commitlens.report.html import render as render_html
 from helpers import build_log, make_ctx, weekly_log
 
 META = {
-    "title": "测试报告",
+    "title": "Test Report",
     "team": "Panda",
     "generated_at": "2026-11-17 10:00",
     "config_hash": "deadbeef",
@@ -35,10 +35,11 @@ class TestReport(unittest.TestCase):
         self.assertIn("<!doctype html>", html)
         self.assertEqual(html.count('<section class="check"'), 8)
         self.assertEqual(html.count('class="card"'), 8)
-        self.assertIn("综合评分", html)
-        self.assertIn("扣分明细", html)
-        self.assertIn("测试报告", html)
+        self.assertIn("Overall score", html)
+        self.assertIn("Deduction Details", html)
+        self.assertIn("Test Report", html)
         self.assertIn("<svg", html)
+        self.assertNotRegex(html, r"[\u4e00-\u9fff]")
 
     def test_no_external_assets(self):
         html = build_html(weekly_log([5, 6, 4, 7, 5, 6, 4, 5]))
@@ -60,7 +61,7 @@ class TestReport(unittest.TestCase):
     def test_evidence_is_collapsible(self):
         html = build_html(weekly_log([10, 9, 8, 7, 6, 5, 4, 3]))
         self.assertIn("<details", html)
-        self.assertIn("查看证据", html)
+        self.assertIn("View evidence", html)
 
 
 if __name__ == "__main__":

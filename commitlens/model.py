@@ -23,11 +23,11 @@ class Severity(str, Enum):
         return {"ok": 0, "info": 1, "warn": 2, "alert": 3}[self.value]
 
 
-SEVERITY_CN = {
-    "ok": "正常",
-    "info": "提示",
-    "warn": "关注",
-    "alert": "问题",
+SEVERITY_LABELS = {
+    "ok": "OK",
+    "info": "Info",
+    "warn": "Warning",
+    "alert": "Alert",
 }
 
 

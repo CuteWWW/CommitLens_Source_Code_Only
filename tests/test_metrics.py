@@ -40,16 +40,17 @@ class TestMessageRules(unittest.TestCase):
 
     def test_long_subject(self):
         c = self.commit("a" * 90)
-        self.assertTrue(any("标题过长" in v for v in rule_violations(c, self.cfg)))
+        self.assertTrue(any("Subject too long" in v for v in rule_violations(c, self.cfg)))
 
     def test_missing_type_prefix(self):
         cfg = Config({"message": {"require_type_prefix": True}}).get
-        self.assertTrue(any("类型前缀" in v for v in rule_violations(self.commit("add parser"), cfg)))
+        self.assertTrue(any("type prefix" in v.lower()
+                            for v in rule_violations(self.commit("add parser"), cfg)))
         self.assertEqual(rule_violations(self.commit("feat: add parser"), cfg), [])
 
     def test_big_change_needs_body(self):
         c = self.commit("feat: rewrite engine", body="", churn=500)
-        self.assertTrue(any("正文" in v for v in rule_violations(c, self.cfg)))
+        self.assertTrue(any("explanatory body" in v for v in rule_violations(c, self.cfg)))
         c2 = self.commit("feat: rewrite engine", body="Because the old one was slow.", churn=500)
         self.assertEqual(rule_violations(c2, self.cfg), [])
 

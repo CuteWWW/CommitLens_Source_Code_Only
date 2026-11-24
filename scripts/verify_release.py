@@ -71,7 +71,7 @@ def verify(*, run_tests: bool) -> dict:
 
     coverage = json.loads((ROOT / 'artifacts/coverage.json').read_text(encoding='utf-8'))
     add('test suite and main-process statement coverage recorded',
-        coverage['tests_passed'] and coverage['tests_run'] >= 49 and coverage['coverage'] >= .70,
+        coverage['tests_passed'] and coverage['tests_run'] >= 50 and coverage['coverage'] >= .70,
         {'tests': coverage['tests_run'], 'main_process_coverage': coverage['coverage'],
          'coverage_scope': coverage['method']})
     if run_tests:

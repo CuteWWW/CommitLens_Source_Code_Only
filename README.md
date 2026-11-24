@@ -36,7 +36,7 @@ python -m commitlens scan --log demo.log --out demo.html
 ```bash
 python -m commitlens checks    # 看八个检查项都查什么
 python -m commitlens init      # 生成 commitlens.toml
-python -m unittest discover -s tests -q    # 运行 49 个自动化测试
+python -m unittest discover -s tests -q    # 运行 50 个自动化测试
 python scripts/coverage_report.py         # 主进程 Python 语句覆盖率
 python scripts/run_evaluation.py          # 合成基线/敏感性实验
 
@@ -112,7 +112,7 @@ scripts/
 └── burndown.py           真实任务导入后生成燃尽图；空数据不伪造趋势
 
 docs/adr/                 含 ADR-004～006 的性能、解释性和隐私决策
-tests/                    49 个单元和真实本地 Git 集成测试（需要本地 Git）
+tests/                    50 个单元和真实本地 Git 集成测试（需要本地 Git）
 process/                  Sprint、会议、人员贡献等真实证据填写模板
 report/                   完整 LaTeX 正文与可重复构建的双栏 PDF 源码
 deliverables/             样例报告、52 项更新表、展示网页、视频和双栏稿

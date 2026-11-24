@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from ..model import CheckResult, Evidence, Finding, Severity
-from .base import Context, fmt_pct, pct, register
+from .base import Context, count_label, fmt_pct, pct, register
 
 
 def author_file_counts(ctx: Context) -> dict[str, Counter]:
@@ -77,10 +77,11 @@ def run(ctx: Context) -> list[CheckResult]:
         Severity.INFO if single_owner else Severity.OK
     )
     summary = (
-        f"在 {len(eligible)} 个被改动 ≥{min_changes} 次的文件中，{len(single_owner)} 个"
-        f"（{fmt_pct(ratio_single)}）有 {share_threshold:.0%} 以上的改动来自同一人；"
-        f"贡献活动集中度代理 = {bf} 人（{bf} 人累计覆盖 {coverage:.0%} 的历史文件修改次数，"
-        "不能据此推断真实知识覆盖）"
+        f"Of {len(eligible)} files changed at least {min_changes} times, "
+        f"{len(single_owner)} ({fmt_pct(ratio_single)}) have at least "
+        f"{share_threshold:.0%} of their changes from one contributor. "
+        f"Contribution-concentration proxy = {bf}: the smallest contributor group covering "
+        f"{coverage:.0%} of historical file changes. This does not measure actual knowledge."
     )
 
     watched = {p for p, _, _ in single_owner[:5]} | {p for p, _ in shared[:5]}
@@ -96,26 +97,30 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="ownership",
                 severity=severity,
-                title=f"{len(single_owner)} 个文件的修改活动集中于同一人（活动代理 {bf}）",
+                title=(
+                    f"Changes to {count_label(len(single_owner), 'file')} are concentrated in "
+                    f"one contributor (activity proxy: {bf})"
+                ),
                 detail=(
-                    "此指标仅统计作者修改过文件的次数，属于贡献活动代理。"
-                    "不能单凭这些记录判断谁掌握代码知识、谁能够接手或谁离开会造成知识流失。"
-                    "可用它识别值得人工核实的潜在交接点。"
+                    "This metric counts how often contributors changed each file. It is an "
+                    "activity proxy, not proof of who understands the code or who can take over. "
+                    "Use it to identify handoff risks that deserve human review."
                 ),
                 advice=(
-                    "对单人垄断的热点文件做一次结对评审或轮换 owner；"
-                    "补上该模块的文档与测试，让第二个人能在半天内接手。"
+                    "Run a paired review or rotate ownership for hotspots dominated by one "
+                    "contributor. Add documentation and tests so a second contributor can take "
+                    "over within half a day."
                 ),
                 evidence=[
                     Evidence(
                         label=p,
                         detail=(
-                            f"{share:.0%} 的改动来自 {counter.most_common(1)[0][0]}"
-                            f"（{counter.most_common(1)[0][1]} 次 / 共 {counter.total()} 次，"
-                            f"{len(counter)} 人参与）"
+                            f"{share:.0%} of changes came from {counter.most_common(1)[0][0]} "
+                            f"({counter.most_common(1)[0][1]} of {counter.total()} changes; "
+                            f"{len(counter)} contributor(s))"
                         ),
-                        lines=[f"- {a}: {n} 次" for a, n in counter.most_common(6)]
-                        + [f"- 关联提交 SHA：{sha}" for sha in file_commits[p]],
+                        lines=[f"- {a}: {n} changes" for a, n in counter.most_common(6)]
+                        + [f"- Related commit SHA: {sha}" for sha in file_commits[p]],
                         commit=file_commits[p][0] if file_commits[p] else None,
                     )
                     for p, counter, share in single_owner[:5]
@@ -128,18 +133,26 @@ def run(ctx: Context) -> list[CheckResult]:
             Finding(
                 check="ownership",
                 severity=Severity.INFO,
-                title=f"{len(shared)} 个文件被 {shared_min} 人以上反复修改，属于协作密集区",
-                detail=(
-                    "多人反复改同一个文件，通常意味着它是团队的公共交叉点："
-                    "容易产生合并冲突，也说明这块的设计可能不够清晰。"
+                title=(
+                    f"{count_label(len(shared), 'file')} "
+                    f"{'was' if len(shared) == 1 else 'were'} repeatedly changed by at least "
+                    f"{shared_min} contributors"
                 ),
-                advice="把公共交叉点拆成职责更单一的模块；冲突频繁的文件在评审时优先安排原作者参与。",
+                detail=(
+                    "Files changed repeatedly by multiple contributors are shared coordination "
+                    "points. They are prone to merge conflicts and may indicate an unclear module "
+                    "boundary."
+                ),
+                advice=(
+                    "Split shared coordination points into modules with narrower responsibilities. "
+                    "Include recent authors in reviews for files with frequent conflicts."
+                ),
                 evidence=[
                     Evidence(
                         label=p,
-                        detail=f"{counter.total()} 次改动，{len(counter)} 人参与",
-                        lines=[f"- {a}: {n} 次" for a, n in counter.most_common(6)]
-                        + [f"- 关联提交 SHA：{sha}" for sha in file_commits[p]],
+                        detail=f"{counter.total()} changes from {len(counter)} contributor(s)",
+                        lines=[f"- {a}: {n} changes" for a, n in counter.most_common(6)]
+                        + [f"- Related commit SHA: {sha}" for sha in file_commits[p]],
                         commit=file_commits[p][0] if file_commits[p] else None,
                     )
                     for p, counter in shared[:5]
@@ -155,7 +168,7 @@ def run(ctx: Context) -> list[CheckResult]:
     return [
         CheckResult(
             check="ownership",
-            title="知识集中度",
+            title="Knowledge Concentration",
             severity=severity,
             summary=summary,
             order=7,
@@ -170,7 +183,7 @@ def run(ctx: Context) -> list[CheckResult]:
             },
             chart={
                 "type": "table",
-                "columns": ["文件", "主导者", "占比", "改动次数", "参与人数"],
+                "columns": ["File", "Dominant contributor", "Share", "Changes", "Contributors"],
                 "rows": rows,
             },
             findings=findings,
@@ -181,8 +194,8 @@ def run(ctx: Context) -> list[CheckResult]:
 def _empty() -> CheckResult:
     return CheckResult(
         check="ownership",
-        title="知识集中度",
+        title="Knowledge Concentration",
         severity=Severity.INFO,
-        summary="窗口内没有提交，无法评估",
+        summary="No commits in the selected window; analysis unavailable",
         order=7,
     )

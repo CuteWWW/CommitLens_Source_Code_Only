@@ -1,7 +1,7 @@
-"""配置加载。
+"""Configuration loading.
 
-用标准库 tomllib（Python 3.11+），不引入 PyYAML，减少安装麻烦。
-所有阈值都从配置来，对应 NFR「可配置」：不写死数字，换团队改配置即可。
+Uses the standard-library tomllib module (Python 3.11+). All thresholds are
+configurable so teams can adapt the analysis without changing code.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ CONFIG_FILENAME = "commitlens.toml"
 
 DEFAULTS: dict[str, Any] = {
     "general": {
-        # 只分析最近 N 天；设成 0 表示全历史
+        # Analyze the most recent N days; 0 means full history.
         "window_days": 180,
-        # 这些路径不参与分析（生成物、依赖、锁文件会把统计带偏）
+        # Generated files, dependencies, and lock files distort the statistics.
         "ignore_paths": [
             "node_modules/",
             "vendor/",
@@ -32,9 +32,9 @@ DEFAULTS: dict[str, Any] = {
             "*.png",
             "*.jpg",
         ],
-        # 排除的机器人账号
+        # Ignore automated contributors.
         "ignore_authors": ["dependabot[bot]", "renovate[bot]"],
-        # 低于这个提交数，百分比和排名基本是噪声，报告会给出提示
+        # Below this count, percentages and rankings are too noisy to score.
         "min_commits": 30,
     },
     "identity": {
@@ -50,32 +50,32 @@ DEFAULTS: dict[str, Any] = {
             "feat", "fix", "docs", "style", "refactor",
             "test", "chore", "perf", "build", "ci", "revert",
         ],
-        # 一句话说不清改了什么的词
+        # Subjects that do not explain what changed.
         "vague_words": [
             "update", "updates", "fix", "fixes", "wip", "minor",
             "change", "changes", "modify", "misc", "stuff", "tmp",
-            "修改", "更新", "提交", "测试", "fix bug", "bug fix",
+            "fix bug", "bug fix",
         ],
         "require_issue_ref": False,
-        # 大改动必须写正文解释为什么
+        # Large changes require a body that explains why they were made.
         "require_body_churn": 200,
     },
     "size": {
-        # 超过这个文件数算"巨型提交"
+        # Commits above this file count are considered oversized.
         "max_files": 30,
-        # 超过这个增删行数算"巨型提交"
+        # Commits above this changed-line count are considered oversized.
         "max_lines": 800,
-        # 同时用分位数兜底（P95），避免大团队阈值失真
+        # Use a percentile threshold as a relative outlier guard.
         "giant_percentile": 95,
         "top_n": 5,
     },
     "cadence": {
-        # 高于团队中位数的多少倍算"过于频繁"
+        # Multiple of the team median considered unusually frequent.
         "freq_multiplier": 3.0,
         "min_commits_for_freq": 8,
-        # 多少天没提交算"长期未提交"
+        # Days without a commit before a contributor is considered dormant.
         "dormant_days": 21,
-        # 判断空窗前，此人至少要有多少次提交
+        # Minimum prior commits before dormancy is evaluated.
         "min_commits_for_dormant": 5,
     },
     "hotspot": {
@@ -83,31 +83,31 @@ DEFAULTS: dict[str, Any] = {
         "min_changes": 3,
     },
     "ownership": {
-        # 单人改动占比超过多少算"单人垄断"
+        # Share of file changes from one contributor considered concentrated.
         "single_owner_share": 0.8,
         "min_changes": 5,
-        # 巴士因子：覆盖多少比例的改动
+        # Share of historical changes covered by the bus-factor proxy.
         "bus_factor_coverage": 0.8,
         "shared_min_authors": 3,
         "top_n": 10,
     },
     "trend": {
         "recent_weeks": 4,
-        # 统计显著性阈值
+        # Statistical significance threshold.
         "alpha": 0.05,
-        # 降幅超过多少百分比算"明显下降"
+        # Percentage drop considered materially significant.
         "drop_pct": 0.25,
         "min_weeks": 8,
     },
     "report": {
-        "title": "Git 提交历史健康度报告",
-        # 团队名，显示在页头
+        "title": "Git Commit History Health Report",
+        # Team name displayed in the report header.
         "team": "",
     },
 }
 
-DEFAULT_TOML = """# CommitLens 配置。所有阈值都可以改，改完重新 scan 即可。
-# 这份文件本身会进报告页脚（哈希），保证结果可复现。
+DEFAULT_TOML = """# CommitLens configuration. Change thresholds and rerun scan.
+# The configuration is fingerprinted and included in the report footer.
 
 [general]
 window_days = 180
@@ -150,7 +150,7 @@ alpha = 0.05
 drop_pct = 0.25
 
 [report]
-title = "Git 提交历史健康度报告"
+title = "Git Commit History Health Report"
 team = ""
 """
 

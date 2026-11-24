@@ -91,13 +91,13 @@ def read_log(
             encoding="utf-8",
             errors="replace",
         )
-    except FileNotFoundError as exc:  # pragma: no cover - 环境问题
+    except FileNotFoundError as exc:  # pragma: no cover - environment issue
         raise RuntimeError(
-            "找不到 git 命令。请先安装 Git 并确保 git 在 PATH 里，"
-            "或者用 --log 指定一份已保存的 git log 文本。"
+            "Git was not found. Install Git and ensure it is on PATH, or use --log to "
+            "analyze a saved git log."
         ) from exc
     except PermissionError as exc:
-        raise RuntimeError(f"没有权限执行 Git 或读取仓库：{exc}") from exc
+        raise RuntimeError(f"No permission to execute Git or read the repository: {exc}") from exc
     if proc.returncode != 0:
         # `git log` exits 128 in an initialized but as-yet-uncommitted repo.
         # This is valid input and must yield a low-confidence empty report.
@@ -111,7 +111,7 @@ def read_log(
         )
         if head.returncode != 0 and valid_repo.returncode == 0:
             return ""
-        raise RuntimeError(f"git log 执行失败：{proc.stderr.strip()}")
+        raise RuntimeError(f"git log failed: {proc.stderr.strip()}")
     return proc.stdout
 
 

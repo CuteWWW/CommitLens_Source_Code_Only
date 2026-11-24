@@ -11,7 +11,7 @@ from typing import Any
 
 from .. import __version__
 from ..diagnose import Diagnosis
-from ..model import SEVERITY_CN, CheckResult, Severity
+from ..model import SEVERITY_LABELS, CheckResult, Severity
 from . import charts
 
 SEV_COLOR = {
@@ -25,7 +25,7 @@ CSS = """
 :root{--ok:#16a34a;--info:#2563eb;--warn:#d97706;--alert:#dc2626;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0}
 *{box-sizing:border-box}
 body{margin:0;background:#f6f7f9;color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Roboto,sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   line-height:1.65;font-size:15px}
 .wrap{max-width:1000px;margin:0 auto;padding:40px 24px 80px}
 header{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:24px}
@@ -88,7 +88,7 @@ nav.toc a{color:#334155;text-decoration:none;border-bottom:1px dashed #cbd5e1}
 
 def render(ctx, diagnosis: Diagnosis, meta: dict[str, Any]) -> str:
     checks = diagnosis.results
-    title = meta.get("title") or "Git 提交历史健康度报告"
+    title = meta.get("title") or "Git Commit History Health Report"
 
     head = _header(ctx, meta, title)
     verdict = _verdict(diagnosis)
@@ -100,7 +100,7 @@ def render(ctx, diagnosis: Diagnosis, meta: dict[str, Any]) -> str:
     footer = _footer(ctx, meta)
 
     return f"""<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -112,7 +112,7 @@ def render(ctx, diagnosis: Diagnosis, meta: dict[str, Any]) -> str:
 {head}
 {nav}
 {verdict}
-<h2 id="scorecard">八项体检结果</h2>
+<h2 id="scorecard">Health Check Results</h2>
 <div class="cards">{cards}</div>
 {deductions}
 {sections}
@@ -129,16 +129,16 @@ def _header(ctx, meta: dict[str, Any], title: str) -> str:
     date_range = f"{rng[0]} → {rng[1]}" if rng else "—"
     team = meta.get("team") or ""
     chips = [
-        f"提交 {ctx.commit_count:,}",
-        f"贡献者 {len(ctx.authors)}",
-        f"时间范围 {date_range}",
-        f"窗口 {meta.get('window_days', 0)} 天",
-        f"生成于 {meta.get('generated_at', '')}",
-        f"配置指纹 {meta.get('config_hash', '')}",
+        f"Commits: {ctx.commit_count:,}",
+        f"Contributors: {len(ctx.authors)}",
+        f"Date range: {date_range}",
+        f"Window: {meta.get('window_days', 0)} days",
+        f"Generated: {meta.get('generated_at', '')}",
+        f"Config fingerprint: {meta.get('config_hash', '')}",
         f"v{__version__}",
     ]
     if team:
-        chips.insert(0, f"团队 {team}")
+        chips.insert(0, f"Team: {team}")
     chip_html = "".join(f'<span class="chip">{escape(c)}</span>' for c in chips)
 
     min_commits = ctx.cfg("general", "min_commits")
@@ -146,17 +146,21 @@ def _header(ctx, meta: dict[str, Any], title: str) -> str:
     if ctx.commit_count < min_commits:
         banner = (
             '<div class="banner">'
-            f"<b>样本量不足：</b>窗口内只有 {ctx.commit_count} 个提交，"
-            f"低于 {min_commits} 条的置信下限。下面的百分比和排名很可能只是噪声，"
-            "因此不会给出 A–E 等级；请扩大 <code>window_days</code> 或换一段更长的历史再判断。"
+            f"<b>Insufficient sample size:</b> the selected window contains only "
+            f"{ctx.commit_count} commits, below the {min_commits}-commit confidence threshold. "
+            "Percentages and rankings may be noisy, so no A-E grade is assigned. Increase "
+            "<code>window_days</code> or analyze a longer history before drawing conclusions."
             "</div>"
         )
     if not meta.get("show_authors", False):
-        banner += ('<div class="banner">隐私保护：贡献者默认以 Dev 编号展示；'
-                   '提交 SHA 及本地路径仍可能允许重新识别，请勿公开分享敏感报告。</div>')
+        banner += (
+            '<div class="banner">Privacy notice: contributors are shown as Dev numbers by '
+            'default. Commit SHAs and local paths may still permit re-identification, so do '
+            'not share reports that contain sensitive repository data.</div>'
+        )
 
     return f"""<header>
-  <div class="eyebrow">CommitLens · 提交历史体检</div>
+  <div class="eyebrow">CommitLens · Commit History Health</div>
   <h1>{escape(title)}</h1>
   <div class="repo">{escape(ctx.repo)}</div>
   <div class="chips">{chip_html}</div>
@@ -175,15 +179,19 @@ def _verdict(d: Diagnosis) -> str:
     if d.deductions:
         items = "".join(
             f'<li><span class="t" style="color:{SEV_COLOR[x.severity.value]}">'
-            f"{escape(SEVERITY_CN[x.severity.value])}</span> · {escape(x.title)}</li>"
+            f"{escape(SEVERITY_LABELS[x.severity.value])}</span> · {escape(x.title)}</li>"
             for x in sorted(d.deductions, key=lambda y: -y.points)
         )
     else:
-        items = "<li>八项检查均未发现明显问题。</li>"
+        items = "<li>No material issues were found across the eight checks.</li>"
 
     color = SEV_COLOR.get(d.worst.value, "#0f172a")
     score_text = str(d.score) if d.scorable else "—"
-    score_caption = f"综合评分 · 等级 {escape(d.grade)}" if d.scorable else "样本不足，暂不评分"
+    score_caption = (
+        f"Overall score · Grade {escape(d.grade)}"
+        if d.scorable else
+        "Sample size is below the confidence threshold; no score is assigned"
+    )
     return f"""<section class="verdict">
   <div class="scorebox">
     <div class="num" style="color:{color}">{score_text}</div>
@@ -200,7 +208,7 @@ def _cards(checks: list[CheckResult]) -> str:
         out.append(
             f'<div class="card" style="border-left-color:{color}">'
             f'<div class="ct"><span>{r.order}. {escape(r.title)}</span>'
-            f'<span class="badge" style="background:{color}">{SEVERITY_CN[r.severity.value]}</span></div>'
+            f'<span class="badge" style="background:{color}">{SEVERITY_LABELS[r.severity.value]}</span></div>'
             f'<div class="cs">{escape(r.summary)}</div></div>'
         )
     return "".join(out)
@@ -211,21 +219,22 @@ def _deductions(d: Diagnosis) -> str:
         rows = "".join(
             f"<tr><td>{escape(x.title)}</td>"
             f'<td><span class="badge" style="background:{SEV_COLOR[x.severity.value]}">'
-            f"{SEVERITY_CN[x.severity.value]}</span></td>"
+            f"{SEVERITY_LABELS[x.severity.value]}</span></td>"
             f"<td>-{x.points}</td></tr>"
             for x in sorted(d.deductions, key=lambda y: -y.points)
         )
         total = sum(x.points for x in d.deductions)
     else:
-        rows = '<tr><td colspan="3">无扣分项，八项检查均处于正常范围。</td></tr>'
+        rows = '<tr><td colspan="3">No deductions; all eight checks are within normal ranges.</td></tr>'
         total = 0
 
-    return f"""<h2 id="deductions">扣分明细</h2>
-<table class="data"><thead><tr><th>检查项</th><th>等级</th><th>扣分</th></tr></thead>
-<tbody>{rows}<tr><td><b>合计</b></td><td></td><td><b>-{total}</b></td></tr></tbody></table>
+    return f"""<h2 id="deductions">Deduction Details</h2>
+<table class="data"><thead><tr><th>Check</th><th>Level</th><th>Deduction</th></tr></thead>
+<tbody>{rows}<tr><td><b>Total</b></td><td></td><td><b>-{total}</b></td></tr></tbody></table>
 <p class="summary" style="font-size:13px;color:#64748b">
-评分规则：样本充足时 100 分起，每个「问题」项扣 8 分、「关注」项扣 4 分、「提示」不扣分。
-每一笔扣分都对应上面某条结论，不存在无法解释的分数。</p>"""
+Scoring starts at 100 when the sample is sufficient. Each Alert deducts 8 points, each
+Warning deducts 4 points, and Info items do not deduct points. Every deduction maps to a
+finding shown above.</p>"""
 
 
 def _section(r: CheckResult) -> str:
@@ -235,11 +244,11 @@ def _section(r: CheckResult) -> str:
     if r.findings:
         findings = "".join(_finding(f) for f in r.findings)
     else:
-        findings = '<p class="none">该检查项未发现需要处理的问题。</p>'
+        findings = '<p class="none">No issues requiring action were found for this check.</p>'
 
     return f"""<section class="check" id="check-{escape(r.check)}">
   <h2>{r.order}. {escape(r.title)}
-    <span class="badge" style="background:{color}">{SEVERITY_CN[r.severity.value]}</span></h2>
+    <span class="badge" style="background:{color}">{SEVERITY_LABELS[r.severity.value]}</span></h2>
   <p class="summary">{escape(r.summary)}</p>
   <div class="chart-wrap">{body}</div>
   {findings}
@@ -255,7 +264,7 @@ def _finding(f) -> str:
     if f.detail:
         parts.append(f"<p>{escape(f.detail)}</p>")
     if f.advice:
-        parts.append(f'<p class="advice"><b>建议：</b>{escape(f.advice)}</p>')
+        parts.append(f'<p class="advice"><b>Recommendation:</b> {escape(f.advice)}</p>')
     if f.evidence:
         parts.append(_evidence(f.evidence))
     parts.append("</article>")
@@ -269,12 +278,12 @@ def _evidence(items) -> str:
         if e.lines:
             lines = "<ul>" + "".join(f"<li>{escape(x)}</li>" for x in e.lines) + "</ul>"
         sha = (f' · <a href="#commit-{escape(e.commit)}"'
-               f' title="下钻到原始提交">SHA {escape(e.commit[:12])}</a>') if e.commit else ""
+               f' title="View source commit">SHA {escape(e.commit[:12])}</a>') if e.commit else ""
         rows.append(
             f'<li><span class="el">{escape(e.label)}</span>'
             f'<span class="ed">{escape(e.detail)}{sha}</span>{lines}</li>'
         )
-    label = f"查看证据（{len(items)} 条）"
+    label = f"View evidence ({len(items)})"
     return (
         f'<details class="ev"><summary>{label}</summary>'
         f'<ul class="ev-body">{"".join(rows)}</ul></details>'
@@ -293,47 +302,50 @@ def _commit_index(ctx, diagnosis: Diagnosis) -> str:
         c = samples[sha]
         changes = ", ".join(c.paths[:10])
         if len(c.paths) > 10:
-            changes += f" …（另 {len(c.paths) - 10} 文件）"
+            changes += f" ... and {len(c.paths) - 10} more files"
         rows.append(
             f'<tr id="commit-{escape(sha)}"><td><code>{escape(sha)}</code></td>'
             f'<td>{escape(c.date.isoformat())}</td><td>{escape(c.author)}</td>'
             f'<td>{escape(c.subject)}</td><td>{escape(changes)}</td></tr>'
         )
-    return ('<h2 id="commit-index">原始提交证据索引</h2>'
-            '<p class="summary">点击诊断中的 SHA 可定位到此索引；'
-            '完整 diff 请在本地仓库执行 <code>git show SHA</code>。</p>'
+    return ('<h2 id="commit-index">Source Commit Evidence Index</h2>'
+            '<p class="summary">Select a SHA in a finding to jump to this index. '
+            'Run <code>git show SHA</code> in the local repository for the complete diff.</p>'
             '<div class="chart-wrap"><table class="data"><thead><tr>'
-            '<th>完整 SHA</th><th>时间</th><th>作者</th><th>标题</th><th>修改文件</th>'
+            '<th>Full SHA</th><th>Date</th><th>Contributor</th><th>Subject</th><th>Changed files</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
 def _footer(ctx, meta: dict[str, Any]) -> str:
     cmd = meta.get("command", "")
-    git_cmd = " ".join(meta.get("git_command", [])) or "（本次使用日志文件，未执行 git）"
+    git_cmd = " ".join(meta.get("git_command", [])) or (
+        "A saved log file was used; Git was not executed."
+    )
     source = meta.get("source", "")
     config_toml = meta.get("config_toml", "")
     effective_config = meta.get("effective_config", "")
     data_sha = meta.get("data_sha256", "")
-    git_version = meta.get("git_version", "未知")
-    repo_revision = meta.get("repo_revision", "未知")
-    config_source = meta.get("config_source", "内置默认值")
-    identity_warnings = meta.get("identity_warnings", "无")
+    git_version = meta.get("git_version", "Unknown")
+    repo_revision = meta.get("repo_revision", "Unknown")
+    config_source = meta.get("config_source", "Built-in defaults")
+    identity_warnings = meta.get("identity_warnings", "None")
     return f"""<footer>
-  <p><b>复现方式</b></p>
+  <p><b>Reproduction command</b></p>
   <pre>{escape(cmd)}</pre>
-  <p>数据来源：{escape(source)}</p>
-  <p>Git 版本：{escape(git_version)} · 仓库 HEAD：<code>{escape(repo_revision)}</code>
-    · 原始数据 SHA-256：<code>{escape(data_sha)}</code></p>
-  <p>配置来源：{escape(config_source)}</p>
-  <p>身份检查：{escape(identity_warnings)}</p>
-  <details><summary style="cursor:pointer">查看采集命令</summary><pre>{escape(git_cmd)}</pre></details>
-  <details><summary style="cursor:pointer">查看实际生效配置（与指纹一致）</summary><pre>{escape(effective_config)}</pre></details>
-  <details><summary style="cursor:pointer">查看原始配置文件（如有）</summary><pre>{escape(config_toml)}</pre></details>
-  <p>解释边界：Issue 关联仅为文本模式匹配，未查验 Issue 是否存在；
-     路径修改次数与作者贡献集中度不能代表真实代码知识或人员能力；
-     巨型提交仅是规模信号，无法证明混合多项关注点；
-     默认仅统计当前 HEAD 可达的非合并提交（可显式修改范围）。
-     本报告用于团队流程改进，不应用于个人绩效评估。</p>
-  <p>由 CommitLens v{__version__} 生成于 {escape(meta.get("generated_at", ""))} ·
-     配置指纹 {escape(meta.get("config_hash", ""))}</p>
+  <p>Data source: {escape(source)}</p>
+  <p>Git version: {escape(git_version)} · Repository HEAD: <code>{escape(repo_revision)}</code>
+    · Source data SHA-256: <code>{escape(data_sha)}</code></p>
+  <p>Configuration source: {escape(config_source)}</p>
+  <p>Identity check: {escape(identity_warnings)}</p>
+  <details><summary style="cursor:pointer">View collection command</summary><pre>{escape(git_cmd)}</pre></details>
+  <details><summary style="cursor:pointer">View effective configuration</summary><pre>{escape(effective_config)}</pre></details>
+  <details><summary style="cursor:pointer">View source configuration</summary><pre>{escape(config_toml)}</pre></details>
+  <p>Interpretation limits: issue references are matched as text and are not verified against
+     the issue tracker. File-change counts and contribution concentration do not measure actual
+     code knowledge or contributor ability. Oversized commits are a scale signal and do not
+     prove that multiple concerns were mixed. By default, only non-merge commits reachable from
+     HEAD are analyzed. Use this report for process improvement, not individual performance
+     evaluation.</p>
+  <p>Generated by CommitLens v{__version__} at {escape(meta.get("generated_at", ""))} ·
+     Config fingerprint {escape(meta.get("config_hash", ""))}</p>
 </footer>"""

@@ -189,19 +189,25 @@ def _weighted_percentile(counts: dict[int, int], q: float) -> float:
 
 
 def _empty(check: str, title: str, order: int) -> CheckResult:
-    return CheckResult(check, title, Severity.INFO, "窗口内没有提交，无法评估", order=order)
+    return CheckResult(
+        check,
+        title,
+        Severity.INFO,
+        "No commits in the selected window; analysis unavailable",
+        order=order,
+    )
 
 
 def _format_commit(c: Commit, count: int = 12) -> Evidence:
     return Evidence(label=f"commit {c.short_sha}",
-                    detail=f"{c.nfiles} 文件 / {c.churn} 行 · {c.author} · {c.subject}",
+                    detail=f"{c.nfiles} files / {c.churn} lines · {c.author} · {c.subject}",
                     lines=[f"- {x}" for x in c.paths[:count]], commit=c.sha)
 
 
 def _message_result(state: dict, cfg: Config) -> CheckResult:
     total = state["count"]
     if not total:
-        return _empty("message", "提交信息规范", 1)
+        return _empty("message", "Commit Message Quality", 1)
     from .metrics.message import _severity
     item = state["message"]
     offenders = item["offenders"]
@@ -214,26 +220,33 @@ def _message_result(state: dict, cfg: Config) -> CheckResult:
         for row in item["top"][:5]:
             c = unpack(state["samples"][row["sha"]])
             evidence.append(Evidence(label=f"commit {c.short_sha}",
-                                     detail=f"「{c.subject}」改动 {c.nfiles} 个文件 / {c.churn} 行",
+                                     detail=(
+                                         f"\"{c.subject}\" changed {c.nfiles} files / "
+                                         f"{c.churn} lines"
+                                     ),
                                      lines=[f"- {v}" for v in row["violations"]], commit=c.sha))
         findings = [Finding("message", severity,
-                            f"{offenders} 个提交的信息无法说明改了什么",
-                            "消息格式和标题质量可能影响评审者理解，需人工结合改动上下文核对。",
-                            "对不合规提交制定可执行的提交格式规范与针对性示例。", evidence)]
-    labels, vals = zip(*rules.most_common(6)) if rules else (("无违规",), (0,))
-    return CheckResult("message", "提交信息规范", severity,
-                       f"{fmt_pct(ratio)} 的提交不符合规范（{offenders}/{total}）"
-                       f"，最常见问题：{rules.most_common(1)[0][0] if rules else '无'}",
+                            f"{offenders} commits do not explain what changed",
+                            "Message format and subject quality affect reviewer understanding. "
+                            "Review each finding with the corresponding change.",
+                            "Adopt a concrete commit-message convention with targeted examples.",
+                            evidence)]
+    labels, vals = zip(*rules.most_common(6)) if rules else (("No violations",), (0,))
+    return CheckResult("message", "Commit Message Quality", severity,
+                       f"{fmt_pct(ratio)} of commits do not meet the message rules "
+                       f"({offenders}/{total}); most common issue: "
+                       f"{rules.most_common(1)[0][0] if rules else 'none'}",
                        order=1, stats={"total": total, "offenders": offenders,
                                        "ratio": round(ratio, 4), "by_rule": dict(rules)},
-                       chart={"type": "bar", "labels": list(labels), "values": list(vals), "unit": "次"},
+                       chart={"type": "bar", "labels": list(labels), "values": list(vals),
+                              "unit": "occurrences"},
                        findings=findings)
 
 
 def _size_results(state: dict, cfg: Config) -> list[CheckResult]:
     total = state["count"]
     if not total:
-        return [_empty("size", "单次改动规模", 2), _empty("giant", "巨型提交", 3)]
+        return [_empty("size", "Change Size", 2), _empty("giant", "Oversized Commits", 3)]
     file_hist, churn_hist = Counter(), Counter()
     records = []
     for pair, value in state["pairs"].items():
@@ -274,46 +287,57 @@ def _size_results(state: dict, cfg: Config) -> list[CheckResult]:
     size_sev = Severity.WARN if wide_count / total >= .1 else Severity.INFO if wide_count else Severity.OK
     giant_sev = (Severity.ALERT if giant_share >= .3 else Severity.WARN if giant_share >= .15
                  else Severity.INFO if giant_count else Severity.OK)
-    size_findings = ([Finding("size", size_sev, f"{wide_count} 个提交修改文件数超过阈值",
-                              "文件数属于变更规模代理，不能直接证明质量风险。",
-                              "人工检查变更目的和拆分可能性。",
+    size_findings = ([Finding("size", size_sev,
+                              f"{wide_count} commits exceed the file-count threshold",
+                              "File count is a scale proxy and does not prove a quality risk.",
+                              "Review the purpose of the change and whether it can be split.",
                               [_format_commit(c) for c in wide_samples])]
                      if wide_count else [])
-    giant_findings = ([Finding("giant", giant_sev, f"{giant_count} 个大规模提交",
-                               "规模阈值和相对极端离群同时检查，不能认定多个关注点被混合。",
-                               "审阅原始 diff，必要时分拆提交。",
+    giant_findings = ([Finding("giant", giant_sev, f"{giant_count} oversized commits",
+                               "Scale thresholds and relative outliers are signals, not proof "
+                               "that unrelated concerns were mixed.",
+                               "Review the source diff and split the commit when practical.",
                                [_format_commit(c) for c in giant_samples])]
                       if giant_count else [])
     buckets = [sum(n for v, n in file_hist.items() if fn(v)) for fn in (
         lambda v: v == 1, lambda v: 2 <= v <= 3, lambda v: 4 <= v <= 9,
         lambda v: 10 <= v <= 29, lambda v: 30 <= v <= 99, lambda v: v >= 100)]
-    size = CheckResult("size", "单次改动规模", size_sev,
-                       f"提交改动中位数 {median_files:.0f} 个文件、{median_churn:.0f} 行；"
-                       f"P90 为 {p90_files:.0f} 个文件，{wide_count} 个提交改了超过 {max_files} 个文件",
+    size = CheckResult("size", "Change Size", size_sev,
+                       f"Median commit size is {median_files:.0f} files and "
+                       f"{median_churn:.0f} lines; P90 is {p90_files:.0f} files. "
+                       f"{wide_count} commits changed more than {max_files} files.",
                        order=2, stats={"median_files": median_files, "p90_files": p90_files,
                                        "median_churn": median_churn, "p95_churn": p95_churn,
                                        "over_max_files": wide_count, "max_files": max_files},
-                       chart={"type": "bar", "labels": ["1 个文件", "2-3 个", "4-9 个", "10-29 个", "30-99 个", "100+ 个"],
-                              "values": buckets, "unit": "个提交"}, findings=size_findings)
-    giant_result = CheckResult("giant", "巨型提交", giant_sev,
-                               f"{giant_count} 个规模异常提交（≥ {max_files} 文件、≥ {max_lines} 行"
-                               f"或 P{rel_q:g} 极端离群），占 {fmt_pct(giant_count / total)} 的提交数、"
-                               f"却吃掉 {fmt_pct(giant_share)} 的代码改动量",
+                       chart={"type": "bar",
+                              "labels": ["1 file", "2-3 files", "4-9 files",
+                                         "10-29 files", "30-99 files", "100+ files"],
+                              "values": buckets, "unit": "commits"}, findings=size_findings)
+    giant_result = CheckResult("giant", "Oversized Commits", giant_sev,
+                               f"{giant_count} size outliers (>= {max_files} files, "
+                               f">= {max_lines} lines, or above the P{rel_q:g} tail threshold) "
+                               f"account for {fmt_pct(giant_count / total)} of commits and "
+                               f"{fmt_pct(giant_share)} of all changed lines.",
                                order=3, stats={"count": giant_count, "ratio": round(giant_count / total, 4),
                                                "churn_share": round(giant_share, 4), "max_files": max_files,
                                                "max_lines": max_lines, "giant_percentile": rel_q,
                                                "percentile_files_threshold": round(p_files, 2),
                                                "percentile_churn_threshold": round(p_lines, 2),
                                                "relative_enabled": use_relative},
-                               chart={"type": "bar", "labels": [c.short_sha for c in giant_samples[:8]] or ["无"],
-                                      "values": [c.churn for c in giant_samples[:8]] or [0], "unit": "行改动"},
+                               chart={"type": "bar",
+                                      "labels": [c.short_sha for c in giant_samples[:8]] or ["None"],
+                                      "values": [c.churn for c in giant_samples[:8]] or [0],
+                                      "unit": "changed lines"},
                                findings=giant_findings)
     return [size, giant_result]
 
 
 def _cadence_results(state: dict, cfg: Config, now: datetime) -> list[CheckResult]:
     if not state["count"]:
-        return [_empty("cadence_freq", "提交频率异常", 4), _empty("cadence_dormant", "长期未提交", 5)]
+        return [
+            _empty("cadence_freq", "Commit Cadence", 4),
+            _empty("cadence_dormant", "Dormant Contributors", 5),
+        ]
     authors = state["authors"]
     weeks = max(((date.fromisoformat(state["last_date"]) -
                   date.fromisoformat(state["first_date"])).days + 1) / 7, 1.0)
@@ -331,24 +355,25 @@ def _cadence_results(state: dict, cfg: Config, now: datetime) -> list[CheckResul
     f_findings = []
     if frequent:
         f_findings = [Finding("cadence_freq", f_sev,
-                              f"{len(frequent)} 人提交频率相对偏高",
-                              "仅用于观察提交节奏，不用于衡量个人绩效。",
-                              "核查提交粒度与工作分工。",
-                              [Evidence(a, f"{count} 次 / {weeks:.1f} 周 = {rate:.2f} 次/周，"
-                                        f"其他人中位数 {others_median(a):.2f}",
+                              f"{len(frequent)} contributors commit more often than their peers",
+                              "This metric observes cadence only and is not a performance measure.",
+                              "Review commit granularity and workload allocation.",
+                              [Evidence(a, f"{count} commits / {weeks:.1f} weeks = "
+                                        f"{rate:.2f} per week; peers' median: "
+                                        f"{others_median(a):.2f}",
                                         commit=authors[a]["last_sha"])
                                for a, rate, count in frequent[:5]])]
     top_authors = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
-    freq = CheckResult("cadence_freq", "提交频率异常", f_sev,
-                       f"窗口内 {state['count']} 次提交、{n_people} 人参与，"
-                       f"人均 {state['count'] / n_people:.1f} 次；"
-                       + (f"{len(frequent)} 人提交频率显著高于其他人" if frequent
-                          else "没有人的提交频率明显偏离团队"),
+    freq = CheckResult("cadence_freq", "Commit Cadence", f_sev,
+                       f"{state['count']} commits from {n_people} contributors in the selected "
+                       f"window, averaging {state['count'] / n_people:.1f} commits per contributor; "
+                       + (f"{len(frequent)} contributors commit substantially more often than peers"
+                          if frequent else "no contributor has an unusual commit frequency"),
                        order=4, stats={"weeks": round(weeks, 1),
                                        "median_per_week": round(median(list(rates.values())), 2),
                                        "frequent": [a for a, _, _ in frequent]},
                        chart={"type": "bar", "labels": [a for a, _ in top_authors],
-                              "values": [v for _, v in top_authors], "unit": "次"},
+                              "values": [v for _, v in top_authors], "unit": "commits"},
                        findings=f_findings)
     day_limit = cfg.get("cadence", "dormant_days")
     min_dormant = cfg.get("cadence", "min_commits_for_dormant")
@@ -361,22 +386,26 @@ def _cadence_results(state: dict, cfg: Config, now: datetime) -> list[CheckResul
     ratio = len(dormant) / n_people
     d_sev = Severity.ALERT if ratio >= .5 else Severity.WARN if dormant else Severity.OK
     d_findings = ([Finding("cadence_dormant", d_sev,
-                           f"{len(dormant)} 人已连续 {day_limit} 天以上没有提交",
-                           "可能是按计划收尾或出现阻塞，不能直接判定人员流失。",
-                           "与团队 backlog 和成员实际计划核对。",
-                           [Evidence(a, f"最后提交 {last}（{gap} 天前），此前 {count} 次",
+                           f"{len(dormant)} contributors have been inactive for at least "
+                           f"{day_limit} days",
+                           "The project may be planned to finish, or work may be blocked. "
+                           "Activity alone cannot prove contributor loss.",
+                           "Compare with the backlog and the contributor's current plan.",
+                           [Evidence(a, f"Last commit {last} ({gap} days ago); "
+                                      f"{count} commits before that",
                                      commit=sha)
                             for a, gap, count, last, sha in dormant[:6]])]
                   if dormant else [])
-    dorm = CheckResult("cadence_dormant", "长期未提交", d_sev,
-                       (f"{len(dormant)} 人已连续 ≥{day_limit} 天没有提交"
-                        f"（{'、'.join(x[0] for x in dormant[:3])}），"
-                        f"占 {fmt_pct(ratio)} 的贡献者" if dormant else
-                        f"没有成员超过 {day_limit} 天未提交"),
+    dorm = CheckResult("cadence_dormant", "Dormant Contributors", d_sev,
+                       (f"{len(dormant)} contributors have not committed for at least "
+                        f"{day_limit} days ({', '.join(x[0] for x in dormant[:3])}), "
+                        f"representing {fmt_pct(ratio)} of contributors" if dormant else
+                        f"No contributor has been inactive for more than {day_limit} days"),
                        order=5, stats={"dormant": [x[0] for x in dormant],
                                        "threshold_days": day_limit},
-                       chart={"type": "bar", "labels": [x[0] for x in dormant] or ["无"],
-                              "values": [x[1] for x in dormant] or [0], "unit": "天未提交"},
+                       chart={"type": "bar", "labels": [x[0] for x in dormant] or ["None"],
+                              "values": [x[1] for x in dormant] or [0],
+                              "unit": "days since last commit"},
                        findings=d_findings)
     return [freq, dorm]
 
@@ -384,13 +413,16 @@ def _cadence_results(state: dict, cfg: Config, now: datetime) -> list[CheckResul
 def _file_evidence(state: dict, path: str, detail: str, extras: list[str]) -> Evidence:
     file = state["files"][path]
     return Evidence(path, detail,
-                    extras + [f"- 关联提交 SHA：{sha}" for sha in file["shas"]],
+                    extras + [f"- Related commit SHA: {sha}" for sha in file["shas"]],
                     commit=file["shas"][-1] if file["shas"] else None)
 
 
 def _file_results(state: dict, cfg: Config) -> list[CheckResult]:
     if not state["count"]:
-        return [_empty("hotspot", "热点文件", 6), _empty("ownership", "知识集中度", 7)]
+        return [
+            _empty("hotspot", "Hotspot Files", 6),
+            _empty("ownership", "Knowledge Concentration", 7),
+        ]
     files = state["files"]
     ranked = sorted(files.items(), key=lambda kv: (kv[1]["changes"], kv[1]["churn"]), reverse=True)
     total_changes = sum(s["changes"] for s in files.values()) or 1
@@ -400,21 +432,25 @@ def _file_results(state: dict, cfg: Config) -> list[CheckResult]:
     hottest_path, hottest = ranked[0] if ranked else ("-", {"changes": 0, "authors": {}})
     h_sev = (Severity.WARN if hottest["changes"] >= cfg.get("hotspot", "min_changes")
              and hottest["changes"] / total_changes >= .4 else Severity.INFO)
-    h_findings = ([Finding("hotspot", h_sev, f"{len(top)} 个文件承担了 {fmt_pct(top_share)} 的改动",
-                           "热点代表修改次数较集中，但不直接说明缺陷多。",
-                           "为频繁修改的文件补测试并评审职责边界。",
+    h_findings = ([Finding("hotspot", h_sev,
+                           f"{len(top)} files account for {fmt_pct(top_share)} of all changes",
+                           "Hotspots indicate concentrated change activity, not a high defect count.",
+                           "Add tests for frequently changed files and review ownership boundaries.",
                            [_file_evidence(state, p,
-                                           f"被改 {s['changes']} 次 / {s['churn']} 行 / {len(s['authors'])} 人",
-                                           [f"- 参与人：{'、'.join(sorted(s['authors']))}"])
+                                           f"Changed {s['changes']} times / {s['churn']} lines / "
+                                           f"{len(s['authors'])} contributor(s)",
+                                           [f"- Contributors: {', '.join(sorted(s['authors']))}"])
                             for p, s in top[:5]])] if top else [])
-    hotspot = CheckResult("hotspot", "热点文件", h_sev,
-                          f"共 {len(files)} 个文件被改动；最热的 {len(top)} 个文件承担了 "
-                          f"{fmt_pct(top_share)} 的改动，其中 `{hottest_path}` 被改"
-                          f" {hottest['changes']} 次（{len(hottest['authors'])} 人参与）",
+    hotspot = CheckResult("hotspot", "Hotspot Files", h_sev,
+                          f"{len(files)} files changed in total. The top {len(top)} hotspots "
+                          f"account for {fmt_pct(top_share)} of all changes; `{hottest_path}` "
+                          f"changed {hottest['changes']} times with "
+                          f"{len(hottest['authors'])} contributor(s).",
                           order=6, stats={"n_files": len(files), "top_share": round(top_share, 4),
                                           "top": [{"path": p, "changes": s["changes"],
                                                    "authors": len(s["authors"])} for p, s in top]},
-                          chart={"type": "table", "columns": ["文件", "改动次数", "改动行数", "参与人数"],
+                          chart={"type": "table",
+                                 "columns": ["File", "Changes", "Changed lines", "Contributors"],
                                  "rows": [[f"`{p}`", str(s["changes"]), f"{s['churn']:,}",
                                            str(len(s["authors"]))] for p, s in top]},
                           findings=h_findings)
@@ -452,31 +488,43 @@ def _file_results(state: dict, cfg: Config) -> list[CheckResult]:
     o_findings = []
     if singles:
         o_findings.append(Finding("ownership", o_sev,
-                                  f"{len(singles)} 个文件的修改活动集中于同一人（活动代理 {bf}）",
-                                  "改动占比只是活动代理，不代表知识实际覆盖。",
-                                  "对高集中度文件核对交接文档与第二位维护者。",
+                                  f"Changes to {len(singles)} files are concentrated in one "
+                                  f"contributor (activity proxy: {bf})",
+                                  "Change share is an activity proxy, not proof of actual knowledge.",
+                                  "Check handoff documentation and a second maintainer for these files.",
                                   [_file_evidence(state, p,
-                                                  f"{share:.0%} 的修改来自 {Counter(f['authors']).most_common(1)[0][0]}",
-                                                  [f"- {a}: {n} 次" for a, n in Counter(f["authors"]).most_common(6)])
+                                                  f"{share:.0%} of changes came from "
+                                                  f"{Counter(f['authors']).most_common(1)[0][0]}",
+                                                  [f"- {a}: {n} changes"
+                                                   for a, n in Counter(f["authors"]).most_common(6)])
                                    for p, f, share in singles[:5]]))
     if shared:
         o_findings.append(Finding("ownership", Severity.INFO,
-                                  f"{len(shared)} 个文件被 {shared_min} 人以上反复修改",
-                                  "跨人员修改密集，可能需要协调接口。", "复核职责划分。",
-                                  [_file_evidence(state, p, f"{f['changes']} 次改动，{len(f['authors'])} 人",
-                                                  [f"- {a}: {n} 次" for a, n in Counter(f["authors"]).most_common(6)])
+                                  f"{len(shared)} files were repeatedly changed by at least "
+                                  f"{shared_min} contributors",
+                                  "Frequent cross-contributor changes may require interface coordination.",
+                                  "Review module ownership and boundaries.",
+                                  [_file_evidence(state, p,
+                                                  f"{f['changes']} changes from "
+                                                  f"{len(f['authors'])} contributor(s)",
+                                                  [f"- {a}: {n} changes"
+                                                   for a, n in Counter(f["authors"]).most_common(6)])
                                    for p, f in shared[:5]]))
-    ownership = CheckResult("ownership", "知识集中度", o_sev,
-                            f"在 {len(eligible)} 个被改动 ≥{min_changes} 次的文件中，"
-                            f"{len(singles)} 个（{fmt_pct(ratio)}）有 {share_threshold:.0%} 以上的"
-                            f"改动来自同一人；贡献活动集中度代理 = {bf} 人"
-                            f"（{bf} 人累计覆盖 {coverage:.0%} 的历史文件修改次数，不能据此推断真实知识覆盖）",
+    ownership = CheckResult("ownership", "Knowledge Concentration", o_sev,
+                            f"Of {len(eligible)} files changed at least {min_changes} times, "
+                            f"{len(singles)} ({fmt_pct(ratio)}) have at least "
+                            f"{share_threshold:.0%} of changes from one contributor. "
+                            f"Contribution-concentration proxy = {bf}: the smallest contributor "
+                            f"group covering {coverage:.0%} of historical file changes. "
+                            "This does not measure actual knowledge.",
                             order=7, stats={"eligible_files": len(eligible),
                                             "single_owner_files": len(singles), "ratio": round(ratio, 4),
                                             "bus_factor": bf, "bus_factor_cumulative": detail,
                                             "bus_factor_interpretation": "historical file-change concentration proxy; not verified knowledge or expertise",
                                             "shared_files": [p for p, _ in shared[:10]]},
-                            chart={"type": "table", "columns": ["文件", "主导者", "占比", "改动次数", "参与人数"],
+                            chart={"type": "table",
+                                   "columns": ["File", "Dominant contributor", "Share",
+                                               "Changes", "Contributors"],
                                    "rows": [[f"`{p}`", Counter(f["authors"]).most_common(1)[0][0],
                                              f"{share:.0%}", str(f["changes"]), str(len(f["authors"]))]
                                             for p, f, share in singles[:cfg.get("ownership", "top_n")]]},
@@ -492,7 +540,7 @@ def _trend_result(state: dict, cfg: Config, now: datetime) -> CheckResult:
     ctx = Context(commits=commits, config=cfg, repo="<incremental>", now=now)
     counts = {date.fromisoformat(d): value["count"] for d, value in state["weeks"].items()}
     if not counts:
-        return _empty("trend", "活跃度趋势", 8)
+        return _empty("trend", "Activity Trend", 8)
     first = min(counts)
     end = monday_of(now.date())
     values = []

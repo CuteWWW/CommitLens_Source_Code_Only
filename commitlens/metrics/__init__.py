@@ -13,14 +13,14 @@ from . import cadence, hotspot, message, ownership, size, trend
 MODULES = [message, size, cadence, hotspot, ownership, trend]
 
 CHECK_TITLES = {
-    "message": "提交信息规范",
-    "size": "单次改动规模",
-    "giant": "巨型提交",
-    "cadence_freq": "提交频率异常",
-    "cadence_dormant": "长期未提交",
-    "hotspot": "热点文件",
-    "ownership": "知识集中度",
-    "trend": "活跃度趋势",
+    "message": "Commit Message Quality",
+    "size": "Change Size",
+    "giant": "Oversized Commits",
+    "cadence_freq": "Commit Cadence",
+    "cadence_dormant": "Dormant Contributors",
+    "hotspot": "Hotspot Files",
+    "ownership": "Knowledge Concentration",
+    "trend": "Activity Trend",
 }
 
 

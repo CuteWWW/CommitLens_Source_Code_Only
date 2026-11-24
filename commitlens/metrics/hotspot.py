@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..model import CheckResult, Evidence, Finding, Severity
-from .base import Context, fmt_pct, pct, register
+from .base import Context, count_label, fmt_pct, pct, register
 
 
 def file_stats(ctx: Context) -> dict[str, dict]:
@@ -36,9 +36,10 @@ def run(ctx: Context) -> list[CheckResult]:
     hottest_path, hottest = ranked[0] if ranked else ("-", {"changes": 0, "authors": set()})
     severity = Severity.WARN if pct(hottest["changes"], total_changes) >= 0.4 else Severity.INFO
     summary = (
-        f"共 {len(stats)} 个文件被改动；最热的 {len(top)} 个文件承担了 "
-        f"{fmt_pct(top_share)} 的改动，其中 `{hottest_path}` 被改 {hottest['changes']} 次"
-        f"（{len(hottest['authors'])} 人参与）"
+        f"{len(stats)} files changed in total. The top {len(top)} hotspots account for "
+        f"{fmt_pct(top_share)} of all changes; `{hottest_path}` changed "
+        f"{hottest['changes']} times with "
+        f"{count_label(len(hottest['authors']), 'contributor')}."
     )
 
     rows = [
@@ -58,22 +59,30 @@ def run(ctx: Context) -> list[CheckResult]:
         Finding(
             check="hotspot",
             severity=severity,
-            title=f"{len(top)} 个文件承担了 {fmt_pct(top_share)} 的改动",
+            title=(
+                f"{count_label(len(top), 'file')} "
+                f"{'accounts' if len(top) == 1 else 'account'} for "
+                f"{fmt_pct(top_share)} of all changes"
+            ),
             detail=(
-                "改动集中在少数文件上是正常现象（核心模块本来就会被反复修改），"
-                "但它意味着两件事：这些文件的评审质量决定了整个项目的质量；"
-                "以及它们是最容易产生冲突和回归的地方。"
+                "Concentration in a small set of files is normal, because core modules are "
+                "changed repeatedly. It also means these files carry a large share of review "
+                "quality risk and are the most likely places for conflicts and regressions."
             ),
             advice=(
-                "给热点文件配更强的测试与更明确的 owner；"
-                "如果某文件每次改动都要大范围返工，考虑先做一次结构性重构。"
+                "Strengthen tests and assign clear ownership for hotspot files. If changes "
+                "to a file repeatedly require broad follow-up work, consider a structural "
+                "refactor before adding more features."
             ),
             evidence=[
                 Evidence(
                     label=p,
-                    detail=f"被改 {s['changes']} 次 / {s['churn']:,} 行 / {len(s['authors'])} 人参与",
-                    lines=[f"- 参与人：{'、'.join(sorted(s['authors']))}"]
-                    + [f"- 关联提交 SHA：{sha}" for sha in file_commits[p]],
+                    detail=(
+                        f"Changed {s['changes']} times / {s['churn']:,} lines / "
+                        f"{len(s['authors'])} contributor(s)"
+                    ),
+                    lines=[f"- Contributors: {', '.join(sorted(s['authors']))}"]
+                    + [f"- Related commit SHA: {sha}" for sha in file_commits[p]],
                     commit=file_commits[p][0] if file_commits[p] else None,
                 )
                 for p, s in top[:5]
@@ -84,7 +93,7 @@ def run(ctx: Context) -> list[CheckResult]:
     return [
         CheckResult(
             check="hotspot",
-            title="热点文件",
+            title="Hotspot Files",
             severity=severity,
             summary=summary,
             order=6,
@@ -95,7 +104,7 @@ def run(ctx: Context) -> list[CheckResult]:
             },
             chart={
                 "type": "table",
-                "columns": ["文件", "改动次数", "改动行数", "参与人数"],
+                "columns": ["File", "Changes", "Changed lines", "Contributors"],
                 "rows": rows,
             },
             findings=findings,
@@ -106,8 +115,8 @@ def run(ctx: Context) -> list[CheckResult]:
 def _empty() -> CheckResult:
     return CheckResult(
         check="hotspot",
-        title="热点文件",
+        title="Hotspot Files",
         severity=Severity.INFO,
-        summary="窗口内没有提交，无法评估",
+        summary="No commits in the selected window; analysis unavailable",
         order=6,
     )
