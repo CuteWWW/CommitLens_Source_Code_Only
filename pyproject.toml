@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "commitlens"
 version = "0.2.0"
-description = "Git 提交历史健康度诊断：8 个检查项 -> 结论 + 证据 + 建议"
+description = "Evidence-backed Git history health diagnosis with eight checks, findings, and recommendations"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []            # 只用标准库，这是刻意的设计决定（见 docs/adr/0003）
